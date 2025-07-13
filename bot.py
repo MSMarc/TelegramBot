@@ -29,11 +29,13 @@ ip_router = os.getenv("IP_ROUTER", "192.168.1.1")
 tarea_auto_arm = None
 blink = None
 CHECK_INTERVAL = 600
+ULTIMOS_CLIPS = {}
+tarea_vigilancia = None
 
 def manejar_comando(texto, message_id, chat_id, user_id):
     global modo_auto, tarea_auto_arm, CHECK_INTERVAL
     if str(user_id) not in USUARIOS_AUTORIZADOS:
-        telegram_send("❌ Acceso denegado. Contacta con el administrador para usarme.", chat_id)
+        telegram_enviar("❌ Acceso denegado. Contacta con el administrador para usarme.", chat_id)
         return
     texto = texto.strip().lower()
     data = cargar_mensajes_guardados()
@@ -45,7 +47,7 @@ def manejar_comando(texto, message_id, chat_id, user_id):
         guardar_mensajes_guardados(data)
     if texto == "/start":
         texto_inicio = "🔄 Bot iniciado, monitoreando dispositivos..."
-        nuevo_id = telegram_send(texto_inicio, chat_id)
+        nuevo_id = telegram_enviar(texto_inicio, chat_id)
         if nuevo_id:
             data = cargar_mensajes_guardados()
             chat_key = str(chat_id)
@@ -55,10 +57,10 @@ def manejar_comando(texto, message_id, chat_id, user_id):
             guardar_mensajes_guardados(data)
             REFRESH_SOLICITADO.set()
     elif texto == "/refresh":
-        telegram_delete(message_id, chat_id)
+        telegram_eliminar(message_id, chat_id)
         REFRESH_SOLICITADO.set()
     elif texto == "/stop":
-        telegram_send_y_guardar("🛑 Bot apagado.", chat_id)
+        telegram_enviar_guardar("🛑 Bot apagado.", chat_id)
         APAGAR_BOT.set()
     elif texto.startswith("/add"):
         try:
@@ -67,14 +69,14 @@ def manejar_comando(texto, message_id, chat_id, user_id):
                 IP_DISPOSITIVOS.append(ip)
                 NOMBRES_DISPOSITIVOS.append(nombre)
                 actualizar_env()
-                telegram_send_y_guardar(f"✅ Añadido: {nombre} ({ip})", chat_id)
+                telegram_enviar_guardar(f"✅ Añadido: {nombre} ({ip})", chat_id)
                 REFRESH_SOLICITADO.set()
             else:
-                telegram_send_y_guardar("⚠️ IP ya existe", chat_id)
+                telegram_enviar_guardar("⚠️ IP ya existe", chat_id)
         except:
-            telegram_send_y_guardar("❌ Uso: /add 192.168.1.X Nombre", chat_id)
+            telegram_enviar_guardar("❌ Uso: /add 192.168.1.X Nombre", chat_id)
     elif texto == "/clear":
-        telegram_delete(message_id, chat_id)  # Borra el comando mismo
+        telegram_eliminar(message_id, chat_id)
         asyncio.create_task(limpiar_chat_completo(chat_id))
     elif texto.startswith("/delete"):
         try:
@@ -84,34 +86,34 @@ def manejar_comando(texto, message_id, chat_id, user_id):
             elif ip_o_nombre in NOMBRES_DISPOSITIVOS:
                 idx = NOMBRES_DISPOSITIVOS.index(ip_o_nombre)
             else:
-                telegram_send_y_guardar("❌ No encontrado.", chat_id)
+                telegram_enviar_guardar("❌ No encontrado.", chat_id)
                 return
             eliminado = NOMBRES_DISPOSITIVOS[idx]
             IP_DISPOSITIVOS.pop(idx)
             NOMBRES_DISPOSITIVOS.pop(idx)
             actualizar_env()
-            telegram_send_y_guardar(f"🗑️ Eliminado: {eliminado}", chat_id)
+            telegram_enviar_guardar(f"🗑️ Eliminado: {eliminado}", chat_id)
             REFRESH_SOLICITADO.set()
         except:
-            telegram_send_y_guardar("❌ Uso: /delete <IP | Nombre>", chat_id)
+            telegram_enviar_guardar("❌ Uso: /delete <IP | Nombre>", chat_id)
     elif texto == "/list":
         asyncio.create_task(enviar_lista_dispositivos(chat_id))
     elif texto.startswith("/interval"):
         try:
             _, segundos = texto.split()
             CHECK_INTERVAL = int(segundos)
-            telegram_send_y_guardar(f"🕒 Intervalo actualizado a {CHECK_INTERVAL} segundos.", chat_id)
+            telegram_enviar_guardar(f"🕒 Intervalo actualizado a {CHECK_INTERVAL} segundos.", chat_id)
         except:
-            telegram_send_y_guardar("❌ Uso: /interval <segundos>", chat_id)
+            telegram_enviar_guardar("❌ Uso: /interval <segundos>", chat_id)
     elif texto.startswith("/arm"):
         partes = texto.split()
         if len(partes) == 2:
             if partes[1] == "auto":
                 if modo_auto:
-                    telegram_send_y_guardar("⚠️ Ya estás en modo AUTO.", chat_id)
+                    telegram_enviar_guardar("⚠️ Ya estás en modo AUTO.", chat_id)
                 else:
                     modo_auto = True
-                    telegram_send_y_guardar("🤖 Modo AUTO activado. El sistema decidirá armar/desarmar automáticamente.", chat_id)
+                    telegram_enviar_guardar("🤖 Modo AUTO activado. El sistema decidirá armar/desarmar automáticamente.", chat_id)
                     if tarea_auto_arm is None or tarea_auto_arm.done():
                         tarea_auto_arm = asyncio.create_task(auto_arm_loop(chat_id))
             elif partes[1] in ["true", "false"]:
@@ -120,13 +122,13 @@ def manejar_comando(texto, message_id, chat_id, user_id):
                     if tarea_auto_arm:
                         tarea_auto_arm.cancel()
                         tarea_auto_arm = None
-                    telegram_send_y_guardar("⚙️ Modo AUTO desactivado. Armado/desarmado forzado.", chat_id)
+                    telegram_enviar_guardar("⚙️ Modo AUTO desactivado. Armado/desarmado forzado.", chat_id)
                 valor = partes[1] == "true"
                 asyncio.create_task(comando_arm(valor, chat_id))
             else:
-                telegram_send_y_guardar("❌ Uso: /arm true|false|auto", chat_id)
+                telegram_enviar_guardar("❌ Uso: /arm true|false|auto", chat_id)
         else:
-            telegram_send_y_guardar("❌ Uso: /arm true|false|auto", chat_id)
+            telegram_enviar_guardar("❌ Uso: /arm true|false|auto", chat_id)
     elif texto == "/help":
         ayuda = (
             "⚙️ *Comandos disponibles:*\n\n"
@@ -141,7 +143,7 @@ def manejar_comando(texto, message_id, chat_id, user_id):
             "/help                                 ❓ Muestra esta ayuda\n"
             "/stop                                 🛑 Apaga el bot\n"
         )
-        telegram_send_y_guardar(ayuda, chat_id)
+        telegram_enviar_guardar(ayuda, chat_id)
 
 async def conectar_blink():
     global blink
@@ -183,39 +185,47 @@ async def activar_blink(chat_id):
         await blink.refresh()
         sync_module = blink.sync.get(BLINK_MODULE)
         if not sync_module:
-            telegram_send_y_guardar(f"❌ No encontrado módulo Sync llamado '{BLINK_MODULE}'", chat_id)
+            telegram_enviar_guardar(f"❌ No encontrado módulo Sync llamado '{BLINK_MODULE}'", chat_id)
             return
         await sync_module.async_arm(True)
-        telegram_send_y_guardar(f"🔒 Blink armado (Sync Module: {BLINK_MODULE})", chat_id)
+        telegram_enviar_guardar(f"🔒 Blink armado (Sync Module: {BLINK_MODULE})", chat_id)
     except Exception as e:
-        telegram_send_y_guardar(f"❌ Error activando Blink: {e}", chat_id)
+        telegram_enviar_guardar(f"❌ Error activando Blink: {e}", chat_id)
 
 async def desactivar_blink(chat_id):
     try:
         await blink.refresh()
         sync_module = blink.sync.get(BLINK_MODULE)
         if not sync_module:
-            telegram_send_y_guardar(f"❌ No encontrado módulo Sync llamado '{BLINK_MODULE}'", chat_id)
+            telegram_enviar_guardar(f"❌ No encontrado módulo Sync llamado '{BLINK_MODULE}'", chat_id)
             return
         await sync_module.async_arm(False)
-        telegram_send_y_guardar(f"🔓 Blink desarmado (Sync Module: {BLINK_MODULE})", chat_id)
+        telegram_enviar_guardar(f"🔓 Blink desarmado (Sync Module: {BLINK_MODULE})", chat_id)
     except Exception as e:
-        telegram_send_y_guardar(f"❌ Error desactivando Blink: {e}", chat_id)
+        telegram_enviar_guardar(f"❌ Error desactivando Blink: {e}", chat_id)
 
 async def comando_arm(activar: bool, chat_id):
+    global tarea_vigilancia
     if blink is None:
         try:
             await conectar_blink()
         except Exception as e:
-            telegram_send_y_guardar(f"❌ Error conectando Blink: {e}", chat_id)
+            telegram_enviar_guardar(f"❌ Error conectando Blink: {e}", chat_id)
             return
     if activar:
         await activar_blink(chat_id)
+        nadie = not any([await async_ping(ip.strip()) for ip in IP_DISPOSITIVOS])
+        if nadie:
+            if tarea_vigilancia is None or tarea_vigilancia.done():
+                tarea_vigilancia = asyncio.create_task(vigilar_movimiento(chat_id))
     else:
         await desactivar_blink(chat_id)
+        if tarea_vigilancia and not tarea_vigilancia.done():
+            tarea_vigilancia.cancel()
+            tarea_vigilancia = None
 
 async def auto_arm_loop(chat_id):
-    global modo_auto
+    global modo_auto, tarea_vigilancia
     armado_actual = None
     while modo_auto and not APAGAR_BOT.is_set():
         router_ok = await async_ping(ip_router)
@@ -234,12 +244,41 @@ async def auto_arm_loop(chat_id):
             armado_actual = armar
             if armar:
                 await activar_blink(chat_id)
+                if tarea_vigilancia is None or tarea_vigilancia.done():
+                    tarea_vigilancia = asyncio.create_task(vigilar_movimiento(chat_id))
                 texto = f"🔒 Sistema armado automáticamente. (Modo AUTO)"
             else:
                 await desactivar_blink(chat_id)
+                if tarea_vigilancia and not tarea_vigilancia.done():
+                    tarea_vigilancia.cancel()
+                    tarea_vigilancia = None
                 texto = f"🔓 Sistema desarmado automáticamente. (Modo AUTO)"
             actualizar_mensaje_principal(texto, chat_id)
         await asyncio.sleep(CHECK_INTERVAL)
+
+async def vigilar_movimiento(chat_id):
+    global ULTIMOS_CLIPS
+    while not APAGAR_BOT.is_set():
+        try:
+            await blink.refresh()
+            nadie = not any([await async_ping(ip.strip()) for ip in IP_DISPOSITIVOS])
+            if nadie:
+                for nombre, cam in blink.cameras.items():
+                    cam.refresh()
+                    nuevo_clip = cam.clip
+                    if not nuevo_clip or ULTIMOS_CLIPS.get(nombre) == nuevo_clip:
+                        continue
+                    ULTIMOS_CLIPS[nombre] = nuevo_clip
+                    r = requests.get(nuevo_clip)
+                    filename = f"videos/{nombre}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+                    os.makedirs("videos", exist_ok=True)
+                    with open(filename, "wb") as f:
+                        f.write(r.content)
+                    telegram_enviar_video(chat_id, filename, f"🎥 Movimiento detectado en *{nombre}*")
+            await asyncio.sleep(30)
+        except Exception as e:
+            print("❌ Error en vigilancia de movimiento:", e)
+            await asyncio.sleep(30)
 
 async def async_ping(ip):
     system = platform.system().lower()
@@ -265,9 +304,9 @@ def guardar_mensajes_guardados(data):
     except Exception as e:
         print("❌ Error guardando mensajes:", e)
 
-def telegram_send(text, chat_id=None):
+def telegram_enviar(text, chat_id=None):
     if chat_id is None:
-        print("❌ chat_id no especificado en telegram_send")
+        print("❌ chat_id no especificado en telegram_enviar")
         return None
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     data = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
@@ -280,8 +319,8 @@ def telegram_send(text, chat_id=None):
         print("❌ Error enviando Telegram:", e)
         return None
 
-def telegram_send_y_guardar(text, chat_id):
-    mid = telegram_send(text, chat_id)
+def telegram_enviar_guardar(text, chat_id):
+    mid = telegram_enviar(text, chat_id)
     if mid:
         data = cargar_mensajes_guardados()
         chat_key = str(chat_id)
@@ -292,7 +331,7 @@ def telegram_send_y_guardar(text, chat_id):
             guardar_mensajes_guardados(data)
     return mid
 
-def telegram_edit(message_id, text, chat_id):
+def telegram_editar(message_id, text, chat_id):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/editMessageText"
     data = {"chat_id": chat_id, "message_id": message_id, "text": text, "parse_mode": "Markdown"}
     try:
@@ -304,7 +343,7 @@ def telegram_edit(message_id, text, chat_id):
         print(f"Respuesta: {r.text if 'r' in locals() else 'sin respuesta'}")
         return False
 
-def telegram_delete(message_id, chat_id):
+def telegram_eliminar(message_id, chat_id):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/deleteMessage"
     data = {"chat_id": chat_id, "message_id": message_id}
     try:
@@ -314,6 +353,17 @@ def telegram_delete(message_id, chat_id):
     except Exception as e:
         print("❌ Error eliminando Telegram:", e)
         return False
+    
+def telegram_enviar_video(chat_id, path, caption):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendVideo"
+    try:
+        with open(path, "rb") as video_file:
+            files = {"video": video_file}
+            data = {"chat_id": chat_id, "caption": caption, "parse_mode": "Markdown"}
+            r = requests.post(url, data=data, files=files)
+            r.raise_for_status()
+    except Exception as e:
+        print("❌ Error enviando vídeo por Telegram:", e)
 
 async def limpiar_chat_completo(chat_id):
     """Intenta eliminar todos los mensajes del chat excepto el principal"""
@@ -323,10 +373,10 @@ async def limpiar_chat_completo(chat_id):
     principal = data[str(chat_id)].get("principal")
     otros = data[str(chat_id)].get("otros", [])
     for msg_id in otros:
-        telegram_delete(msg_id, chat_id)
+        telegram_eliminar(msg_id, chat_id)
     data[str(chat_id)]["otros"] = []
     # if principal:
-    #     telegram_delete(principal, chat_id)
+    #     telegram_eliminar(principal, chat_id)
     #     data[str(chat_id)]["principal"] = None
     guardar_mensajes_guardados(data)
 
@@ -343,7 +393,7 @@ async def enviar_lista_dispositivos(chat_id):
         estado = "✅" if conectado else "❌"
         dispositivos.append(f"{estado} *{nombre}*\nIP: `{ip}`\nMAC: `{mac}`\nPing: `{ping_ms}ms`\n")
     mensaje = "📋 *Dispositivos monitoreados:*\n\n" + "\n".join(dispositivos)
-    telegram_send_y_guardar(mensaje, chat_id)
+    telegram_enviar_guardar(mensaje, chat_id)
 
 def obtener_mac(ip):
     try:
@@ -374,15 +424,15 @@ def actualizar_mensaje_principal(texto, chat_id):
         data[chat_key] = {"principal": None, "otros": []}
     principal_id = data.get(chat_key, {}).get("principal")
     if principal_id:
-        exito = telegram_edit(principal_id, texto_completo, chat_id)
+        exito = telegram_editar(principal_id, texto_completo, chat_id)
         if not exito:
-            telegram_delete(principal_id, chat_id)
-            nuevo_id = telegram_send(texto_completo, chat_id)
+            telegram_eliminar(principal_id, chat_id)
+            nuevo_id = telegram_enviar(texto_completo, chat_id)
             if nuevo_id:
                 data[chat_key]["principal"] = nuevo_id
                 guardar_mensajes_guardados(data)
     else:
-        nuevo_id = telegram_send(texto_completo, chat_id)
+        nuevo_id = telegram_enviar(texto_completo, chat_id)
         if nuevo_id:
             data[chat_key]["principal"] = nuevo_id
             guardar_mensajes_guardados(data)
@@ -469,7 +519,7 @@ async def limpiar_mensajes_anteriores():
                 mensajes = []
             for mid in mensajes:
                 if mid:
-                    telegram_delete(mid, chat_id)
+                    telegram_eliminar(mid, chat_id)
             nuevos_datos[str(chat_id)] = {"principal": None, "otros": []}
         guardar_mensajes_guardados(nuevos_datos)
     except Exception as e:
