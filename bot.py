@@ -56,36 +56,6 @@ def cargar_max_id():
 
 contador_videos = cargar_max_id() + 1
 
-async def detectar_presencia(chat_id=None):
-    global presencia_anterior
-    router_ok = await async_ping(IP_ROUTER)
-    if not router_ok:
-        return None
-    presencia_actual = False
-    for ip in IP_DISPOSITIVOS:
-        if await async_ping(ip.strip()):
-            presencia_actual = True
-            break
-    if chat_id is not None and presencia_anterior is not None:
-        if presencia_anterior == True and presencia_actual == False:
-            await telegram_enviar(f"🏠 /home auto ha detectado casa vacía.", chat_id)
-        elif presencia_anterior == False and presencia_actual == True:
-            await telegram_enviar(f"🏠 /home auto ha detectado alguien en casa.", chat_id)
-    presencia_anterior = presencia_actual
-    return presencia_actual
-
-async def crear_sesion():
-    global session
-    if session is None:
-        session = aiohttp.ClientSession()
-    return session
-
-async def cerrar_sesion():
-    global session
-    if session:
-        await session.close()
-        session = None
-
 async def manejar_comando(texto, message_id, chat_id, user_id):
     global tarea_auto_arm, CHECK_INTERVAL, modo_home, tarea_auto_arm, modo_arm, tarea_principal
     if str(user_id) not in USUARIOS_AUTORIZADOS:
@@ -93,7 +63,9 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
         return
     texto = texto.strip().lower()
     texto.replace("@Sky_Blink_Bot","")
-    if texto == "/start":
+    if not texto.startswith("/"):
+        pass
+    elif texto == "/start":
         telegram_enviar("🏁 Bot iniciado. Usa /help para ver comandos.", chat_id)
     elif texto.startswith("/") and texto[1:].split()[0].isdigit():
         partes = texto[1:].split(maxsplit=1)
@@ -304,15 +276,6 @@ async def comando_cap(chat_id):
         except Exception as e:
             telegram_enviar(f"❌ Error tomando foto en {nombre}: {e}", chat_id)
 
-def telegram_enviar_foto(chat_id, path):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
-    with open(path, "rb") as photo:
-        files = {"photo": photo}
-        data = {"chat_id": chat_id}
-        r = requests.post(url, files=files, data=data)
-    if not r.ok:
-        print(f"Error enviando foto: {r.text}")
-
 async def comando_video(chat_id, numero):
     global videos_ultimas_24h
     if not videos_ultimas_24h:
@@ -365,7 +328,6 @@ async def comando_videos(chat_id):
         mensaje = "⚠️ No se encontraron videos en las últimas 24h."
     telegram_enviar(mensaje, chat_id)
 
-
 async def comando_cams(chat_id):
     if blink is None:
         telegram_enviar("❌ Blink no conectado.", chat_id)
@@ -414,6 +376,18 @@ async def comando_last(chat_id):
     if not any_video:
         telegram_enviar("⚠️ No hay vídeos recientes disponibles en las cámaras.", chat_id)
 
+async def crear_sesion():
+    global session
+    if session is None:
+        session = aiohttp.ClientSession()
+    return session
+
+async def cerrar_sesion():
+    global session
+    if session:
+        await session.close()
+        session = None
+
 async def telegram_enviar_video(chat_id, path, caption):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendVideo"
     global session
@@ -437,6 +411,86 @@ async def telegram_enviar_video(chat_id, path, caption):
     except Exception as e:
         print(f"❌ Error enviando vídeo por Telegram: {e}")
 
+def telegram_enviar_foto(chat_id, path):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
+    with open(path, "rb") as photo:
+        files = {"photo": photo}
+        data = {"chat_id": chat_id}
+        r = requests.post(url, files=files, data=data)
+    if not r.ok:
+        print(f"Error enviando foto: {r.text}")
+
+def telegram_enviar(text, chat_id=None):
+    if chat_id is None:
+        print("❌ chat_id no especificado en telegram_enviar")
+        return None
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    data = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
+    try:
+        r = requests.post(url, data=data)
+        r.raise_for_status()
+        respuesta = r.json()
+        return respuesta.get("result", {}).get("message_id")
+    except Exception as e:
+        print("❌ Error enviando Telegram:", e)
+        return None
+
+def telegram_editar(message_id, text, chat_id):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/editMessageText"
+    data = {"chat_id": chat_id, "message_id": message_id, "text": text, "parse_mode": "Markdown"}
+    try:
+        r = requests.post(url, data=data)
+        r.raise_for_status()
+        return True
+    except Exception as e:
+        print(f"❌ Error editando Telegram mensaje {message_id} en chat {chat_id}: {e}")
+        print(f"Respuesta: {r.text if 'r' in locals() else 'sin respuesta'}")
+        return False
+
+def telegram_eliminar(message_id, chat_id):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/deleteMessage"
+    data = {"chat_id": chat_id, "message_id": message_id}
+    try:
+        r = requests.post(url, data=data)
+        r.raise_for_status()
+        return True
+    except Exception as e:
+        print("❌ Error eliminando Telegram:", e)
+        return False
+
+async def recibir_mensajes():
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates"
+    last_update = 0
+    try:
+        r = requests.get(url)
+        r.raise_for_status()
+        data = r.json()
+        updates = data.get("result", [])
+        if updates:
+            last_update = max(update["update_id"] for update in updates)
+            requests.get(url, params={"offset": last_update + 1})
+    except Exception as e:
+        print("❌ Error limpiando updates antiguos:", e)
+    while not APAGAR_BOT.is_set():
+        try:
+            r = requests.get(url, params={"offset": last_update + 1}, timeout=5)
+            r.raise_for_status()
+            data = r.json()
+            for result in data.get("result", []):
+                last_update = result["update_id"]
+                mensaje = result.get("message")
+                if mensaje:
+                    texto = mensaje.get("text", "")
+                    mid = mensaje.get("message_id")
+                    chat_id = mensaje.get("chat", {}).get("id")
+                    user_id = mensaje.get("from", {}).get("id")
+                    await manejar_comando(texto, mid, chat_id, user_id)
+        except Exception as e:
+            print("❌ Error al recibir mensajes:", e)
+        for _ in range(20):
+            if APAGAR_BOT.is_set():
+                return
+            await asyncio.sleep(0.1)
 
 async def conectar_blink():
     global blink
@@ -490,24 +544,6 @@ async def desactivar_blink(chat_id):
     except Exception as e:
         telegram_enviar(f"❌ Error desactivando Blink: {e}", chat_id)
 
-async def comando_arm(activar: bool, chat_id):
-    global tarea_vigilancia, modo_home, modo_arm
-    if blink is None:
-        try:
-            await conectar_blink()
-        except Exception as e:
-            telegram_enviar(f"❌ Error conectando Blink: {e}", chat_id)
-            return
-    if activar:
-        await activar_blink(chat_id)
-        if tarea_vigilancia is None or tarea_vigilancia.done():
-            tarea_vigilancia = asyncio.create_task(vigilar_movimiento(chat_id))
-    else:
-        await desactivar_blink(chat_id)
-        if tarea_vigilancia and not tarea_vigilancia.done():
-            tarea_vigilancia.cancel()
-            tarea_vigilancia = None
-
 async def loop_principal(chat_id):
     global modo_home, modo_arm, armado_actual, APAGAR_BOT
     while not APAGAR_BOT.is_set():
@@ -540,6 +576,24 @@ async def loop_principal(chat_id):
             print(f"❌ Error en loop_principal: {e}")
             await asyncio.sleep(10)
     print("loop_principal terminado")
+
+async def comando_arm(activar: bool, chat_id):
+    global tarea_vigilancia, modo_home, modo_arm
+    if blink is None:
+        try:
+            await conectar_blink()
+        except Exception as e:
+            telegram_enviar(f"❌ Error conectando Blink: {e}", chat_id)
+            return
+    if activar:
+        await activar_blink(chat_id)
+        if tarea_vigilancia is None or tarea_vigilancia.done():
+            tarea_vigilancia = asyncio.create_task(vigilar_movimiento(chat_id))
+    else:
+        await desactivar_blink(chat_id)
+        if tarea_vigilancia and not tarea_vigilancia.done():
+            tarea_vigilancia.cancel()
+            tarea_vigilancia = None
 
 async def vigilar_movimiento(chat_id):
     global ULTIMOS_CLIPS, videos_ultimas_24h, contador_videos
@@ -579,50 +633,30 @@ async def vigilar_movimiento(chat_id):
             print("❌ Error en vigilancia de movimiento:", e)
             await asyncio.sleep(30)
 
+async def detectar_presencia(chat_id=None):
+    global presencia_anterior
+    router_ok = await async_ping(IP_ROUTER)
+    if not router_ok:
+        return None
+    presencia_actual = False
+    for ip in IP_DISPOSITIVOS:
+        if await async_ping(ip.strip()):
+            presencia_actual = True
+            break
+    if chat_id is not None and presencia_anterior is not None:
+        if presencia_anterior == True and presencia_actual == False:
+            await telegram_enviar(f"🏠 /home auto ha detectado casa vacía.", chat_id)
+        elif presencia_anterior == False and presencia_actual == True:
+            await telegram_enviar(f"🏠 /home auto ha detectado alguien en casa.", chat_id)
+    presencia_anterior = presencia_actual
+    return presencia_actual
+
 async def async_ping(ip):
     system = platform.system().lower()
     command = ["ping", "-n", "1", "-w", "1000", ip] if "windows" in system else ["ping", "-c", "1", "-W", "1", ip]
     proc = await asyncio.create_subprocess_exec(*command, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
     await proc.communicate()
     return proc.returncode == 0
-
-def telegram_enviar(text, chat_id=None):
-    if chat_id is None:
-        print("❌ chat_id no especificado en telegram_enviar")
-        return None
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
-    try:
-        r = requests.post(url, data=data)
-        r.raise_for_status()
-        respuesta = r.json()
-        return respuesta.get("result", {}).get("message_id")
-    except Exception as e:
-        print("❌ Error enviando Telegram:", e)
-        return None
-
-def telegram_editar(message_id, text, chat_id):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/editMessageText"
-    data = {"chat_id": chat_id, "message_id": message_id, "text": text, "parse_mode": "Markdown"}
-    try:
-        r = requests.post(url, data=data)
-        r.raise_for_status()
-        return True
-    except Exception as e:
-        print(f"❌ Error editando Telegram mensaje {message_id} en chat {chat_id}: {e}")
-        print(f"Respuesta: {r.text if 'r' in locals() else 'sin respuesta'}")
-        return False
-
-def telegram_eliminar(message_id, chat_id):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/deleteMessage"
-    data = {"chat_id": chat_id, "message_id": message_id}
-    try:
-        r = requests.post(url, data=data)
-        r.raise_for_status()
-        return True
-    except Exception as e:
-        print("❌ Error eliminando Telegram:", e)
-        return False
 
 async def enviar_lista_dispositivos(chat_id):
     dispositivos = []
@@ -682,40 +716,6 @@ async def manejar_autorize(texto, chat_id, user, bot):
     USUARIOS_AUTORIZADOS.append(nuevo_usuario_id)
     actualizar_env()
     await telegram_enviar(f"✅ Usuario @{username} autorizado correctamente.", chat_id)
-
-async def recibir_mensajes():
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates"
-    last_update = 0
-    try:
-        r = requests.get(url)
-        r.raise_for_status()
-        data = r.json()
-        updates = data.get("result", [])
-        if updates:
-            last_update = max(update["update_id"] for update in updates)
-            requests.get(url, params={"offset": last_update + 1})
-    except Exception as e:
-        print("❌ Error limpiando updates antiguos:", e)
-    while not APAGAR_BOT.is_set():
-        try:
-            r = requests.get(url, params={"offset": last_update + 1}, timeout=5)
-            r.raise_for_status()
-            data = r.json()
-            for result in data.get("result", []):
-                last_update = result["update_id"]
-                mensaje = result.get("message")
-                if mensaje:
-                    texto = mensaje.get("text", "")
-                    mid = mensaje.get("message_id")
-                    chat_id = mensaje.get("chat", {}).get("id")
-                    user_id = mensaje.get("from", {}).get("id")
-                    await manejar_comando(texto, mid, chat_id, user_id)
-        except Exception as e:
-            print("❌ Error al recibir mensajes:", e)
-        for _ in range(20):
-            if APAGAR_BOT.is_set():
-                return
-            await asyncio.sleep(0.1)
 
 async def enviar_estado(chat_id):
     estados_actuales = {}
