@@ -204,7 +204,7 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
     elif texto.startswith("/authorize"):
         await manejar_autorize(texto, chat_id)
     elif texto.startswith("/nocturno"):
-        await cmd_nocturno(texto, chat_id)
+        await comando_nocturno(texto, chat_id)
     elif texto == "/stop":
         telegram_enviar("🛑 Bot apagado.", chat_id)
         APAGAR_BOT.set()
@@ -253,7 +253,7 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
         telegram_enviar("❌ Comando no soportado", chat_id)
 
 
-async def cmd_nocturno(texto, chat_id):
+async def comando_nocturno(texto, chat_id):
     global hora_armado_inicio, hora_armado_fin
     args = texto.split()[1:]
     if len(args) == 0:
