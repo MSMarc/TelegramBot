@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 import re
 import aiohttp
 import aiofiles
+from datetime import time
 
 load_dotenv()
 
@@ -29,18 +30,31 @@ CONFIG_PATH = "blink_config.json"
 RUTA_ETIQUETAS = "etiquetas_videos.json"
 
 modo_home = "auto"
-modo_arm = "true"
+modo_arm = "auto"
 armado_actual = None
 IP_ROUTER = os.getenv("IP_ROUTER", "192.168.1.1")
 tarea_auto_arm = None
 blink = None
-CHECK_INTERVAL = 600
+CHECK_INTERVAL = 60
 ULTIMOS_CLIPS = {}
 videos_ultimas_24h = []
 tarea_vigilancia = None
 tarea_principal = None
 session = None
 presencia_anterior = None
+
+def leer_hora_env(nombre_var, default_hora):
+    valor = os.getenv(nombre_var, None)
+    if valor:
+        try:
+            h, m = map(int, valor.split(":"))
+            return time(h, m)
+        except Exception:
+            print(f"⚠️ Formato inválido para {nombre_var}, usando valor por defecto {default_hora}")
+    return default_hora
+
+hora_armado_inicio = leer_hora_env("HORA_ARMADO_INICIO", time(0,30))
+hora_armado_fin = leer_hora_env("HORA_ARMADO_FIN", time(8,0))
 
 def cargar_max_id():
     if not os.path.exists(RUTA_ETIQUETAS):
@@ -53,8 +67,19 @@ def cargar_max_id():
     except Exception as e:
         print(f"⚠️ Error leyendo etiquetas para max id: {e}")
         return 0
+    
+def cargar_max_id_videos():
+    carpeta = "videos"
+    if not os.path.exists(carpeta):
+        return 0
+    max_id = 0
+    for nombre in os.listdir(carpeta):
+        match = re.match(r"(\d+)_", nombre)
+        if match:
+            max_id = max(max_id, int(match.group(1)))
+    return max_id
 
-contador_videos = cargar_max_id() + 1
+contador_videos = max(cargar_max_id(), cargar_max_id_videos()) + 1
 
 async def manejar_comando(texto, message_id, chat_id, user_id):
     global tarea_auto_arm, CHECK_INTERVAL, modo_home, tarea_auto_arm, modo_arm, tarea_principal
@@ -62,56 +87,36 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
         telegram_enviar("❌ Acceso denegado. Contacta con el administrador para usarme.", chat_id)
         return
     texto = texto.strip().lower()
-    texto.replace("@Sky_Blink_Bot","")
+    texto.replace("@MarcMS_Bot", "")
     if not texto.startswith("/"):
         pass
     elif texto == "/start":
         telegram_enviar("🏁 Bot iniciado. Usa /help para ver comandos.", chat_id)
-    elif texto.startswith("/") and texto[1:].split()[0].isdigit():
-        partes = texto[1:].split(maxsplit=1)
-        if len(partes) != 2:
-            telegram_enviar("❌ Uso: /<número> <etiqueta>", chat_id)
-            return
-        id_str, etiqueta = partes
-        try:
-            vid_id = int(id_str)
-            video = next((v for v in videos_ultimas_24h if v["id"] == vid_id), None)
-            if not video:
-                telegram_enviar("❌ No se encontró vídeo con ese número.", chat_id)
-                return
-            nueva_entrada = {
-                "id": vid_id,
-                "ruta": video["ruta"],
-                "nombre": video["nombre"],
-                "fecha": video["fecha"],
-                "etiqueta": etiqueta.strip()
-            }
-            etiquetas = []
-            if os.path.exists(RUTA_ETIQUETAS):
-                with open(RUTA_ETIQUETAS, "r") as f:
-                    etiquetas = json.load(f)
-            ya_existia = any(e["id"] == vid_id for e in etiquetas)
-            etiquetas = [e for e in etiquetas if e["id"] != vid_id]
-            etiquetas.append(nueva_entrada)
-            with open(RUTA_ETIQUETAS, "w") as f:
-                json.dump(etiquetas, f, indent=2, ensure_ascii=False)
-            if ya_existia:
-                telegram_enviar(f"♻️ Etiqueta para vídeo {vid_id} actualizada: *{etiqueta.strip()}*", chat_id)
-            else:
-                telegram_enviar(f"🏷️ Etiqueta para vídeo {vid_id} guardada: *{etiqueta.strip()}*", chat_id)
-        except Exception as e:
-            telegram_enviar(f"❌ Error etiquetando vídeo: {e}", chat_id)
-    elif texto == "/status":
-        await enviar_estado(chat_id)
+    elif texto == "/help":
+        ayuda = (
+            "⚙️ *Comandos disponibles:*\n\n"
+            "▶️ /start – Inicia el bot\n"
+            "❓ /help – Muestra esta ayuda\n"
+            "🔄 /refresh – Refresca las cámaras\n"
+            "📋 /list – Lista dispositivos\n"
+            "🆕 /add <IP> <Nombre> – Añadir dispositivo\n"
+            "🗑️ /delete <IP | Nombre> – Eliminar dispositivo\n"
+            "🔒 /arm true|false|auto – Cambiar protección\n"
+            "🏠 /home true|false|auto – Control modo hogar\n"
+            "📷 /cams – Info de cámaras\n"
+            "🎞️ /last – Descarga últimos vídeos\n"
+            "📼 /videos – Lista vídeos recientes\n"
+            "🎬 /video <nº> – Envía vídeo concreto\n"
+            "📸 /cap – Foto actual de cámaras\n"
+            "💎 /authorize – Autoriza a otro usuario\n"
+            "⏰ /nocturno – Permite cambiar el horario nocturno\n"
+            "🛑 /stop – Apaga el bot\n"
+        )
+        telegram_enviar(ayuda, chat_id)
     elif texto == "/refresh":
         await blink.refresh()
-    elif texto == "/stop":
-        telegram_enviar("🛑 Bot apagado.", chat_id)
-        APAGAR_BOT.set()
-        if tarea_principal and not tarea_principal.done():
-            tarea_principal.cancel()
-        if tarea_vigilancia and not tarea_vigilancia.done():
-            tarea_vigilancia.cancel()
+    elif texto == "/list":
+        asyncio.create_task(enviar_lista_dispositivos(chat_id))
     elif texto.startswith("/add"):
         try:
             _, ip, nombre = texto.split()
@@ -143,8 +148,6 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
             REFRESH_SOLICITADO.set()
         except:
             telegram_enviar("❌ Uso: /delete <IP | Nombre>", chat_id)
-    elif texto == "/list":
-        asyncio.create_task(enviar_lista_dispositivos(chat_id))
     elif texto.startswith("/arm"):
         partes = texto.split()
         if len(partes) == 2 and partes[1] in ["auto", "true", "false"]:
@@ -198,68 +201,78 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
             telegram_enviar("❌ Blink no conectado.", chat_id)
             return
         await comando_cap(chat_id)
-    elif texto == "/test":
-        await comando_test(chat_id)
     elif texto.startswith("/authorize"):
         await manejar_autorize(texto, chat_id)
-    elif texto == "/help":
-        ayuda = (
-            "⚙️ *Comandos disponibles:*\n\n"
-            "▶️ /start – Inicia el bot\n"
-            "❓ /help – Muestra esta ayuda\n"
-            "🔄 /refresh – Refresca las cámaras\n"
-            "📋 /list – Lista dispositivos\n"
-            "🆕 /add <IP> <Nombre> – Añadir dispositivo\n"
-            "🗑️ /delete <IP | Nombre> – Eliminar dispositivo\n"
-            "🔒 /arm true|false|auto – Cambiar protección\n"
-            "🏠 /home true|false|auto – Control modo hogar\n"
-            "📷 /cams – Info de cámaras\n"
-            "🎞️ /last – Descarga últimos vídeos\n"
-            "📼 /videos – Lista vídeos recientes\n"
-            "🎬 /video <nº> – Envía vídeo concreto\n"
-            "📸 /cap – Foto actual de cámaras\n"
-            "🧪 /test – Test de compatibilidad\n"
-            "💎 /authorize – Autiroza a otro usuario"
-            "🛑 /stop – Apaga el bot\n"
-        )
-        telegram_enviar(ayuda, chat_id)
+    elif texto.startswith("/nocturno"):
+        await cmd_nocturno(texto, chat_id)
+    elif texto == "/stop":
+        telegram_enviar("🛑 Bot apagado.", chat_id)
+        APAGAR_BOT.set()
+        for task in asyncio.all_tasks():
+            if task is not asyncio.current_task():
+                task.cancel()
+    elif texto == "/status":
+        await enviar_estado(chat_id)
+    elif texto.startswith("/") and texto[1:].split()[0].isdigit():
+        partes = texto[1:].split(maxsplit=1)
+        if len(partes) != 2:
+            telegram_enviar("❌ Uso: /<número> <etiqueta>", chat_id)
+            return
+        id_str, etiqueta = partes
+        try:
+            vid_id = int(id_str)
+            video = next((v for v in videos_ultimas_24h if v["id"] == vid_id), None)
+            if not video:
+                telegram_enviar("❌ No se encontró vídeo con ese número.", chat_id)
+                return
+            nueva_entrada = {
+                "id": vid_id,
+                "ruta": video["ruta"],
+                "nombre": video["nombre"],
+                "fecha": video["fecha"],
+                "etiqueta": etiqueta.strip()
+            }
+            etiquetas = []
+            if os.path.exists(RUTA_ETIQUETAS):
+                with open(RUTA_ETIQUETAS, "r") as f:
+                    etiquetas = json.load(f)
+            ya_existia = any(e["id"] == vid_id for e in etiquetas)
+            etiquetas = [e for e in etiquetas if e["id"] != vid_id]
+            etiquetas.append(nueva_entrada)
+            with open(RUTA_ETIQUETAS, "w") as f:
+                json.dump(etiquetas, f, indent=2, ensure_ascii=False)
+            if ya_existia:
+                telegram_enviar(f"♻️ Etiqueta para vídeo {vid_id} actualizada: *{etiqueta.strip()}*", chat_id)
+            else:
+                telegram_enviar(f"🏷️ Etiqueta para vídeo {vid_id} guardada: *{etiqueta.strip()}*", chat_id)
+        except Exception as e:
+            telegram_enviar(f"❌ Error etiquetando vídeo: {e}", chat_id)
+    elif texto == "/test":
+        await telegram_enviar("❌ Comando eliminado por el admin.")
     else:
         telegram_enviar("❌ Comando no soportado", chat_id)
 
-async def comando_test(chat_id):
-    if blink is None:
-        telegram_enviar("❌ Blink no conectado.", chat_id)
+
+async def cmd_nocturno(texto, chat_id):
+    global hora_armado_inicio, hora_armado_fin
+    args = texto.split()[1:]
+    if len(args) == 0:
+        telegram_enviar(f"⏰ Horario nocturno actual: {hora_armado_inicio.strftime('%H:%M')} a {hora_armado_fin.strftime('%H:%M')}", chat_id)
+        return
+    elif len(args) != 2:
+        telegram_enviar("❌ Uso: /nocturno HH:MM HH:MM\nEjemplo: /nocturno 00:30 08:00", chat_id)
         return
     try:
-        sync = blink.sync.get(BLINK_MODULE)
-        if not sync:
-            telegram_enviar(f"❌ No se encontró módulo Sync llamado '{BLINK_MODULE}'", chat_id)
-            return
-        resultados = []
-        for nombre, cam in blink.cameras.items():
-            tiene_clip = bool(cam.clip)
-            resultados.append(f"\n📷 *{nombre}* → clip directo: {'✅' if tiene_clip else '❌'}")
-        telegram_enviar("\n".join(resultados), chat_id)
-        if cam.clip:
-            url_clip = cam.clip
-            r = requests.get(url_clip)
-            if r.ok:
-                video_bytes = r.content
-                filename = f"{nombre}_clip_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
-                path = os.path.join("videos", filename)
-                os.makedirs("videos", exist_ok=True)
-                with open(path, "wb") as f:
-                    f.write(video_bytes)
-        path = os.path.join(os.getcwd(), "videos")
-        os.makedirs(path, exist_ok=True)
-        await blink.download_videos(
-            path,
-            since='2025/07/04 09:34',
-            delay=2
-        )
-        telegram_enviar(f"✅ Vídeos descargados.", chat_id)
-    except Exception as e:
-        telegram_enviar(f"❌ Error durante el test: {e}", chat_id)
+        h_inicio, m_inicio = map(int, args[0].split(":"))
+        h_fin, m_fin = map(int, args[1].split(":"))
+        nueva_hora_inicio = time(h_inicio, m_inicio)
+        nueva_hora_fin = time(h_fin, m_fin)
+    except Exception:
+        telegram_enviar("❌ Formato incorrecto. Usa HH:MM para ambas horas.", chat_id)
+        return
+    hora_armado_inicio = nueva_hora_inicio
+    hora_armado_fin = nueva_hora_fin
+    telegram_enviar(f"⏰ Horario nocturno actualizado: {hora_armado_inicio.strftime('%H:%M')} a {hora_armado_fin.strftime('%H:%M')}", chat_id)
 
 async def comando_cap(chat_id):
     for nombre, camera in blink.cameras.items():
@@ -292,7 +305,7 @@ async def comando_video(chat_id, numero):
     if not os.path.exists(ruta_video):
         telegram_enviar("❌ El video solicitado no está disponible localmente.", chat_id)
         return
-    telegram_enviar_video(chat_id, ruta_video, f"🎥 Video {numero}: {video['nombre']} ({video['fecha']})")
+    await telegram_enviar_video(chat_id, ruta_video, f"🎥 Video {numero}: {video['nombre']} ({video['fecha']})")
 
 async def comando_videos(chat_id):
     global videos_ultimas_24h
@@ -302,16 +315,20 @@ async def comando_videos(chat_id):
     archivos = [f for f in os.listdir(carpeta_videos) if f.endswith(".mp4")]
     lista_mensajes = []
     contador = 1
+    ahora = datetime.now()
+    hace_24h = ahora - timedelta(hours=24)
     for archivo in sorted(archivos, reverse=True):
         match = re.search(r"_(\d{8}_\d{6})\.mp4$", archivo)
         if not match:
             continue
         fecha_archivo_str = match.group(1)
         try:
-            fecha_str = datetime.strptime(fecha_archivo_str, "%Y%m%d_%H%M%S").strftime("%H:%M:%S del %d-%m-%y")
+            fecha_archivo = datetime.strptime(fecha_archivo_str, "%Y%m%d_%H%M%S")
+            if fecha_archivo < hace_24h:
+                continue
+            fecha_str = fecha_archivo.strftime("%H:%M:%S del %d-%m-%y")
         except Exception:
             fecha_str = "Fecha desconocida"
-
         nombre_camara = archivo.split("_")[0]
         ruta_video = os.path.join(carpeta_videos, archivo)
         videos_ultimas_24h.append({
@@ -348,6 +365,7 @@ async def comando_cams(chat_id):
     telegram_enviar(mensaje, chat_id)
 
 async def comando_last(chat_id):
+    global contador_videos
     if blink is None:
         telegram_enviar("❌ Blink no conectado.", chat_id)
         return
@@ -359,7 +377,7 @@ async def comando_last(chat_id):
             carpeta_videos = "videos"
             os.makedirs(carpeta_videos, exist_ok=True)
             fecha_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = os.path.join(carpeta_videos, f"{nombre}_{fecha_str}.mp4")
+            filename = os.path.join(carpeta_videos, f"{contador_videos}_{nombre}_{fecha_str}.mp4")
             async with aiofiles.open(filename, "wb") as f:
                 await f.write(video_bytes)
             match = re.match(r"(.+)_(\d{8})_(\d{6})\.mp4", os.path.basename(filename))
@@ -373,6 +391,7 @@ async def comando_last(chat_id):
             else:
                 texto_mensaje = f"🎥 Último vídeo de {nombre}"
             await telegram_enviar_video(chat_id, filename, texto_mensaje)
+            contador_videos += 1
     if not any_video:
         telegram_enviar("⚠️ No hay vídeos recientes disponibles en las cámaras.", chat_id)
 
@@ -485,6 +504,23 @@ async def recibir_mensajes():
                     chat_id = mensaje.get("chat", {}).get("id")
                     user_id = mensaje.get("from", {}).get("id")
                     await manejar_comando(texto, mid, chat_id, user_id)
+        except requests.exceptions.RequestException as e:
+            print("⚠️ Posible perdida de conexión a internet:", e)
+            await asyncio.sleep(10)
+            continue
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 409:
+                print("⚠️ Conflicto con webhook (409), eliminando webhook...")
+                try:
+                    requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/deleteWebhook")
+                except Exception as e2:
+                    print("❌ Error al eliminar webhook:", e2)
+                await asyncio.sleep(2)
+                continue
+            else:
+                print("❌ Error HTTP inesperado:", e)
+                await asyncio.sleep(10)
+                continue
         except Exception as e:
             print("❌ Error al recibir mensajes:", e)
         for _ in range(20):
@@ -506,7 +542,7 @@ async def conectar_blink():
         print("⚠️ No se encontró sesión guardada o está corrupta. Login manual...")
         if not BLINK_USER or not BLINK_PASS:
             raise Exception("❌ No hay usuario o contraseña Blink en variables de entorno")
-        blink.auth = Auth({"username": BLINK_USER, "password": BLINK_PASS}, no_prompt=True)
+        blink.auth = Auth({"username": BLINK_USER, "password": BLINK_PASS})
     try:
         await blink.start()
         print("✅ Sesión Blink iniciada correctamente.")
@@ -529,7 +565,7 @@ async def activar_blink(chat_id):
             telegram_enviar(f"❌ No encontrado módulo Sync llamado '{BLINK_MODULE}'", chat_id)
             return
         await sync_module.async_arm(True)
-        telegram_enviar(f"🔒 Blink armado (Sync Module: {BLINK_MODULE})", chat_id)
+        telegram_enviar(f"🔒 Blink armado", chat_id)
     except Exception as e:
         telegram_enviar(f"❌ Error activando Blink: {e}", chat_id)
 
@@ -540,14 +576,27 @@ async def desactivar_blink(chat_id):
             telegram_enviar(f"❌ No encontrado módulo Sync llamado '{BLINK_MODULE}'", chat_id)
             return
         await sync_module.async_arm(False)
-        telegram_enviar(f"🔓 Blink desarmado (Sync Module: {BLINK_MODULE})", chat_id)
+        telegram_enviar(f"🔓 Blink desarmado", chat_id)
     except Exception as e:
         telegram_enviar(f"❌ Error desactivando Blink: {e}", chat_id)
 
 async def loop_principal(chat_id):
-    global modo_home, modo_arm, armado_actual, APAGAR_BOT
+    global modo_home, modo_arm, armado_actual, APAGAR_BOT, CHECK_INTERVAL
+    hora_armado_inicio = time(0, 30)
+    hora_armado_fin = time(8, 0)
+    dentro_horario_anterior = False
     while not APAGAR_BOT.is_set():
         try:
+            ahora = datetime.now().time()
+            if hora_armado_inicio < hora_armado_fin:
+                dentro_horario = hora_armado_inicio <= ahora < hora_armado_fin
+            else:
+                dentro_horario = ahora >= hora_armado_inicio or ahora < hora_armado_fin
+            if dentro_horario and not dentro_horario_anterior:
+                await telegram_enviar(f"🌙 Protección nocturna activada a las {hora_armado_inicio.strftime('%H:%M')}", chat_id)
+            if not dentro_horario and dentro_horario_anterior:
+                await telegram_enviar(f"☀️ Protección nocturna desactivada a las {hora_armado_fin.strftime('%H:%M')}", chat_id)
+            dentro_horario_anterior = dentro_horario
             if modo_arm == "true":
                 armar = True
             elif modo_arm == "false":
@@ -556,14 +605,17 @@ async def loop_principal(chat_id):
                 if modo_home == "auto":
                     presencia = await detectar_presencia()
                     if presencia is None:
-                        telegram_enviar(f"⚠️ No se detecta el router {IP_ROUTER}", chat_id)
+                        await telegram_enviar(f"⚠️ No se detecta el router {IP_ROUTER}", chat_id)
                         await asyncio.sleep(CHECK_INTERVAL)
                         continue
                 else:
                     presencia = (modo_home == "true")
-                armar = not presencia
+                if dentro_horario:
+                    armar = True
+                else:
+                    armar = not presencia
             else:
-                telegram_enviar(f"❌ Valor de /arm desconocido: {modo_arm}", chat_id)
+                await telegram_enviar(f"❌ Valor de /arm desconocido: {modo_arm}", chat_id)
                 await asyncio.sleep(CHECK_INTERVAL)
                 continue
             if armado_actual != armar:
@@ -575,7 +627,8 @@ async def loop_principal(chat_id):
         except Exception as e:
             print(f"❌ Error en loop_principal: {e}")
             await asyncio.sleep(10)
-    print("loop_principal terminado")
+    print("end loop_principal")
+
 
 async def comando_arm(activar: bool, chat_id):
     global tarea_vigilancia, modo_home, modo_arm
@@ -597,6 +650,7 @@ async def comando_arm(activar: bool, chat_id):
 
 async def vigilar_movimiento(chat_id):
     global ULTIMOS_CLIPS, videos_ultimas_24h, contador_videos
+    refresco=30
     while not APAGAR_BOT.is_set():
         try:
             await blink.refresh()
@@ -610,7 +664,7 @@ async def vigilar_movimiento(chat_id):
                 ULTIMOS_CLIPS[nombre] = nuevo_hash
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 fecha_str = datetime.strptime(timestamp, "%Y%m%d_%H%M%S").strftime("%H:%M:%S del %d-%m-%y")
-                filename = f"videos/{nombre}_{timestamp}.mp4"
+                filename = f"videos/{contador_videos}_{nombre}_{timestamp}.mp4"
                 os.makedirs("videos", exist_ok=True)
                 async with aiofiles.open(filename, "wb") as f:
                     await f.write(video_bytes)
@@ -628,10 +682,10 @@ async def vigilar_movimiento(chat_id):
                 )
                 await telegram_enviar_video(chat_id, filename, caption)
                 contador_videos += 1
-            await asyncio.sleep(30)
+            await asyncio.sleep(refresco)
         except Exception as e:
             print("❌ Error en vigilancia de movimiento:", e)
-            await asyncio.sleep(30)
+            await asyncio.sleep(refresco)
 
 async def detectar_presencia(chat_id=None):
     global presencia_anterior
@@ -730,6 +784,27 @@ async def enviar_estado(chat_id):
     texto = "\n".join(lineas)
     telegram_enviar(texto, chat_id)
 
+async def captura_cada_hora():
+    os.makedirs("fotos", exist_ok=True)
+    while not APAGAR_BOT.is_set():
+        ahora = datetime.now()
+        siguiente_hora = (ahora + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+        espera = (siguiente_hora - ahora).total_seconds()
+        await asyncio.sleep(espera)
+        try:
+            for nombre, camera in blink.cameras.items():
+                try:
+                    await camera.snap_picture()
+                    await asyncio.sleep(5)
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filename = f"{nombre}_{timestamp}.jpg"
+                    path = os.path.join("fotos", filename)
+                    await camera.image_to_file(path)
+                except Exception as e:
+                    print(f"❌ Error capturando con {nombre}: {e}")
+        except Exception as e:
+            print(f"⚠️ Error global en captura: {e}")
+
 async def main():
     global tarea_principal
     await crear_sesion()
@@ -740,11 +815,14 @@ async def main():
     tarea_principal = asyncio.create_task(loop_principal(TELEGRAM_CHAT_ID))
     tareas = [
         asyncio.create_task(recibir_mensajes()),
+        asyncio.create_task(captura_cada_hora()),
         tarea_principal
     ]
     print("🚀 Bot iniciado")
     try:
         await asyncio.gather(*tareas)
+    except asyncio.CancelledError:
+        print("✅ Tareas canceladas")
     except Exception as e:
         print(f"❌ Error en tareas principales: {e}")
     await cerrar_sesion()
