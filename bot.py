@@ -25,10 +25,8 @@ USUARIOS_AUTORIZADOS = os.getenv("USUARIOS_AUTORIZADOS", "").split(",")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 REFRESH_SOLICITADO = asyncio.Event()
 APAGAR_BOT = asyncio.Event()
-
 CONFIG_PATH = "blink_config.json"
 RUTA_ETIQUETAS = "etiquetas_videos.json"
-
 modo_home = "auto"
 modo_arm = "auto"
 armado_actual = None
@@ -42,6 +40,7 @@ tarea_vigilancia = None
 tarea_principal = None
 session = None
 presencia_anterior = None
+dentro_horario_anterior = False
 
 def leer_hora_env(nombre_var, default_hora):
     valor = os.getenv(nombre_var, None)
@@ -53,8 +52,8 @@ def leer_hora_env(nombre_var, default_hora):
             print(f"⚠️ Formato inválido para {nombre_var}, usando valor por defecto {default_hora}")
     return default_hora
 
-hora_armado_inicio = leer_hora_env("HORA_ARMADO_INICIO", time(0,30))
-hora_armado_fin = leer_hora_env("HORA_ARMADO_FIN", time(8,0))
+HORA_ARMADO_INICIO = leer_hora_env("HORA_ARMADO_INICIO", time(0,30))
+HORA_ARMADO_FIN = leer_hora_env("HORA_ARMADO_FIN", time(8,0))
 
 def cargar_max_id():
     if not os.path.exists(RUTA_ETIQUETAS):
@@ -248,16 +247,16 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
         except Exception as e:
             telegram_enviar(f"❌ Error etiquetando vídeo: {e}", chat_id)
     elif texto == "/test":
-        await telegram_enviar("❌ Comando eliminado por el admin.")
+        telegram_enviar("❌ Comando eliminado por el admin.")
     else:
         telegram_enviar("❌ Comando no soportado", chat_id)
 
 
 async def comando_nocturno(texto, chat_id):
-    global hora_armado_inicio, hora_armado_fin
+    global HORA_ARMADO_INICIO, HORA_ARMADO_FIN
     args = texto.split()[1:]
     if len(args) == 0:
-        telegram_enviar(f"⏰ Horario nocturno actual: {hora_armado_inicio.strftime('%H:%M')} a {hora_armado_fin.strftime('%H:%M')}", chat_id)
+        telegram_enviar(f"⏰ Horario nocturno actual: {HORA_ARMADO_INICIO.strftime('%H:%M')} a {HORA_ARMADO_FIN.strftime('%H:%M')}", chat_id)
         return
     elif len(args) != 2:
         telegram_enviar("❌ Uso: /nocturno HH:MM HH:MM\nEjemplo: /nocturno 00:30 08:00", chat_id)
@@ -270,9 +269,10 @@ async def comando_nocturno(texto, chat_id):
     except Exception:
         telegram_enviar("❌ Formato incorrecto. Usa HH:MM para ambas horas.", chat_id)
         return
-    hora_armado_inicio = nueva_hora_inicio
-    hora_armado_fin = nueva_hora_fin
-    telegram_enviar(f"⏰ Horario nocturno actualizado: {hora_armado_inicio.strftime('%H:%M')} a {hora_armado_fin.strftime('%H:%M')}", chat_id)
+    HORA_ARMADO_INICIO = nueva_hora_inicio
+    HORA_ARMADO_FIN = nueva_hora_fin
+    actualizar_env()
+    telegram_enviar(f"⏰ Horario nocturno actualizado: {HORA_ARMADO_INICIO.strftime('%H:%M')} a {HORA_ARMADO_FIN.strftime('%H:%M')}", chat_id)
 
 async def comando_cap(chat_id):
     for nombre, camera in blink.cameras.items():
@@ -305,7 +305,7 @@ async def comando_video(chat_id, numero):
     if not os.path.exists(ruta_video):
         telegram_enviar("❌ El video solicitado no está disponible localmente.", chat_id)
         return
-    await telegram_enviar_video(chat_id, ruta_video, f"🎥 Video {numero}: {video['nombre']} ({video['fecha']})")
+    telegram_enviar_video(chat_id, ruta_video, f"🎥 Video {numero}: {video['nombre']} ({video['fecha']})")
 
 async def comando_videos(chat_id):
     global videos_ultimas_24h
@@ -390,7 +390,7 @@ async def comando_last(chat_id):
                 texto_mensaje = f"🎥 Último vídeo de *{camara_nombre}*\nFecha: {fecha_formateada}\nHora: {hora_formateada}"
             else:
                 texto_mensaje = f"🎥 Último vídeo de {nombre}"
-            await telegram_enviar_video(chat_id, filename, texto_mensaje)
+            telegram_enviar_video(chat_id, filename, texto_mensaje)
             contador_videos += 1
     if not any_video:
         telegram_enviar("⚠️ No hay vídeos recientes disponibles en las cámaras.", chat_id)
@@ -505,22 +505,22 @@ async def recibir_mensajes():
                     user_id = mensaje.get("from", {}).get("id")
                     await manejar_comando(texto, mid, chat_id, user_id)
         except requests.exceptions.RequestException as e:
-            print("⚠️ Posible perdida de conexión a internet:", e)
+            print("🛜 Posible perdida de conexión a internet:", e)
             await asyncio.sleep(10)
             continue
-        except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 409:
-                print("⚠️ Conflicto con webhook (409), eliminando webhook...")
-                try:
-                    requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/deleteWebhook")
-                except Exception as e2:
-                    print("❌ Error al eliminar webhook:", e2)
-                await asyncio.sleep(2)
-                continue
-            else:
-                print("❌ Error HTTP inesperado:", e)
-                await asyncio.sleep(10)
-                continue
+        # except requests.exceptions.HTTPError as e:
+        #     if e.response.status_code == 409:
+        #         print("⚠️ Conflicto con webhook (409), eliminando webhook...")
+        #         try:
+        #             requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/deleteWebhook")
+        #         except Exception as e2:
+        #             print("❌ Error al eliminar webhook:", e2)
+        #         await asyncio.sleep(2)
+        #         continue
+        #     else:
+        #         print("❌ Error HTTP inesperado:", e)
+        #         await asyncio.sleep(10)
+        #         continue
         except Exception as e:
             print("❌ Error al recibir mensajes:", e)
         for _ in range(20):
@@ -537,7 +537,6 @@ async def conectar_blink():
             auth_data = json.load(f)
         blink.auth = Auth(auth_data)
         sesion_restaurada = True
-        print("🔄 Intentando restaurar sesión desde archivo...")
     except Exception:
         print("⚠️ No se encontró sesión guardada o está corrupta. Login manual...")
         if not BLINK_USER or not BLINK_PASS:
@@ -581,21 +580,18 @@ async def desactivar_blink(chat_id):
         telegram_enviar(f"❌ Error desactivando Blink: {e}", chat_id)
 
 async def loop_principal(chat_id):
-    global modo_home, modo_arm, armado_actual, APAGAR_BOT, CHECK_INTERVAL
-    hora_armado_inicio = time(0, 30)
-    hora_armado_fin = time(8, 0)
-    dentro_horario_anterior = False
+    global modo_home, modo_arm, armado_actual, APAGAR_BOT, CHECK_INTERVAL, dentro_horario_anterior
     while not APAGAR_BOT.is_set():
         try:
             ahora = datetime.now().time()
-            if hora_armado_inicio < hora_armado_fin:
-                dentro_horario = hora_armado_inicio <= ahora < hora_armado_fin
+            if HORA_ARMADO_INICIO < HORA_ARMADO_FIN:
+                dentro_horario = HORA_ARMADO_INICIO <= ahora < HORA_ARMADO_FIN
             else:
-                dentro_horario = ahora >= hora_armado_inicio or ahora < hora_armado_fin
+                dentro_horario = ahora >= HORA_ARMADO_INICIO or ahora < HORA_ARMADO_FIN
             if dentro_horario and not dentro_horario_anterior:
-                await telegram_enviar(f"🌙 Protección nocturna activada a las {hora_armado_inicio.strftime('%H:%M')}", chat_id)
+                telegram_enviar(f"🌙 Protección nocturna activada a las {HORA_ARMADO_INICIO.strftime('%H:%M')}", chat_id)
             if not dentro_horario and dentro_horario_anterior:
-                await telegram_enviar(f"☀️ Protección nocturna desactivada a las {hora_armado_fin.strftime('%H:%M')}", chat_id)
+                telegram_enviar(f"☀️ Protección nocturna desactivada a las {HORA_ARMADO_FIN.strftime('%H:%M')}", chat_id)
             dentro_horario_anterior = dentro_horario
             if modo_arm == "true":
                 armar = True
@@ -605,7 +601,7 @@ async def loop_principal(chat_id):
                 if modo_home == "auto":
                     presencia = await detectar_presencia()
                     if presencia is None:
-                        await telegram_enviar(f"⚠️ No se detecta el router {IP_ROUTER}", chat_id)
+                        telegram_enviar(f"⚠️ No se detecta el router {IP_ROUTER}", chat_id)
                         await asyncio.sleep(CHECK_INTERVAL)
                         continue
                 else:
@@ -615,7 +611,7 @@ async def loop_principal(chat_id):
                 else:
                     armar = not presencia
             else:
-                await telegram_enviar(f"❌ Valor de /arm desconocido: {modo_arm}", chat_id)
+                telegram_enviar(f"❌ Valor de /arm desconocido: {modo_arm}", chat_id)
                 await asyncio.sleep(CHECK_INTERVAL)
                 continue
             if armado_actual != armar:
@@ -628,7 +624,6 @@ async def loop_principal(chat_id):
             print(f"❌ Error en loop_principal: {e}")
             await asyncio.sleep(10)
     print("end loop_principal")
-
 
 async def comando_arm(activar: bool, chat_id):
     global tarea_vigilancia, modo_home, modo_arm
@@ -680,7 +675,7 @@ async def vigilar_movimiento(chat_id):
                     f"Cámara: *{nombre}*\n"
                     f"Fecha: {fecha_str}\n"
                 )
-                await telegram_enviar_video(chat_id, filename, caption)
+                telegram_enviar_video(chat_id, filename, caption)
                 contador_videos += 1
             await asyncio.sleep(refresco)
         except Exception as e:
@@ -699,9 +694,9 @@ async def detectar_presencia(chat_id=None):
             break
     if chat_id is not None and presencia_anterior is not None:
         if presencia_anterior == True and presencia_actual == False:
-            await telegram_enviar(f"🏠 /home auto ha detectado casa vacía.", chat_id)
+            telegram_enviar(f"🏠 /home auto ha detectado casa vacía.", chat_id)
         elif presencia_anterior == False and presencia_actual == True:
-            await telegram_enviar(f"🏠 /home auto ha detectado alguien en casa.", chat_id)
+            telegram_enviar(f"🏠 /home auto ha detectado alguien en casa.", chat_id)
     presencia_anterior = presencia_actual
     return presencia_actual
 
@@ -742,34 +737,56 @@ def obtener_mac(ip):
         return "Error al obtener MAC"
 
 def actualizar_env():
+    claves_a_actualizar = {
+        "IP_DISPOSITIVOS": ",".join(IP_DISPOSITIVOS),
+        "NOMBRES_DISPOSITIVOS": ",".join(NOMBRES_DISPOSITIVOS),
+        "USUARIOS_AUTORIZADOS": ",".join(USUARIOS_AUTORIZADOS),
+        "HORA_ARMADO_INICIO": HORA_ARMADO_INICIO.strftime("%H:%M"),
+        "HORA_ARMADO_FIN": HORA_ARMADO_FIN.strftime("%H:%M")
+    }
+    nuevas_lineas = []
+    claves_actualizadas = set()
+    if os.path.exists(".env"):
+        with open(".env", "r") as f:
+            for linea in f:
+                if "=" in linea:
+                    clave, _ = linea.strip().split("=", 1)
+                    if clave in claves_a_actualizar:
+                        nuevas_lineas.append(f"{clave}={claves_a_actualizar[clave]}")
+                        claves_actualizadas.add(clave)
+                    else:
+                        nuevas_lineas.append(linea.strip())
+                else:
+                    nuevas_lineas.append(linea.strip())
+    for clave, valor in claves_a_actualizar.items():
+        if clave not in claves_actualizadas:
+            nuevas_lineas.append(f"{clave}={valor}")
     with open(".env", "w") as f:
-        f.write(f"IP_DISPOSITIVOS={','.join(IP_DISPOSITIVOS)}\n")
-        f.write(f"NOMBRES_DISPOSITIVOS={','.join(NOMBRES_DISPOSITIVOS)}\n")
-        f.write(f"USUARIOS_AUTORIZADOS={','.join(USUARIOS_AUTORIZADOS)}\n")
+        f.write("\n".join(nuevas_lineas) + "\n")
 
 async def manejar_autorize(texto, chat_id, user, bot):
     global USUARIOS_AUTORIZADOS
     usuario_id = str(user.id)
     if usuario_id != USUARIOS_AUTORIZADOS[0]:
-        await telegram_enviar("❌ Solo el usuario principal puede usar /autorize", chat_id)
+        telegram_enviar("❌ Solo el usuario principal puede usar /autorize", chat_id)
         return
     partes = texto.split()
     if len(partes) != 2:
-        await telegram_enviar("❌ Uso correcto: /autorize @username", chat_id)
+        telegram_enviar("❌ Uso correcto: /autorize @username", chat_id)
         return
     username = partes[1].lstrip("@")
     try:
         chat_info = await bot.get_chat(f"@{username}")
         nuevo_usuario_id = str(chat_info.id)
     except Exception as e:
-        await telegram_enviar(f"❌ No se pudo obtener el user_id de @{username}: {e}", chat_id)
+        telegram_enviar(f"❌ No se pudo obtener el user_id de @{username}: {e}", chat_id)
         return
     if nuevo_usuario_id in USUARIOS_AUTORIZADOS:
-        await telegram_enviar("⚠️ Usuario ya autorizado.", chat_id)
+        telegram_enviar("⚠️ Usuario ya autorizado.", chat_id)
         return
     USUARIOS_AUTORIZADOS.append(nuevo_usuario_id)
     actualizar_env()
-    await telegram_enviar(f"✅ Usuario @{username} autorizado correctamente.", chat_id)
+    telegram_enviar(f"✅ Usuario @{username} autorizado correctamente.", chat_id)
 
 async def enviar_estado(chat_id):
     estados_actuales = {}
