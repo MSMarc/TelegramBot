@@ -12,6 +12,7 @@ import re
 import aiohttp
 import aiofiles
 from datetime import time
+from collections import OrderedDict
 
 load_dotenv()
 
@@ -23,6 +24,7 @@ BLINK_PASS = os.getenv("BLINK_PASS")
 BLINK_MODULE = os.getenv("BLINK_MODULE")
 USUARIOS_AUTORIZADOS = os.getenv("USUARIOS_AUTORIZADOS", "").split(",")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+IP_ROUTER = os.getenv("IP_ROUTER", "192.168.1.1")
 REFRESH_SOLICITADO = asyncio.Event()
 APAGAR_BOT = asyncio.Event()
 CONFIG_PATH = "blink_config.json"
@@ -30,7 +32,6 @@ RUTA_ETIQUETAS = "etiquetas_videos.json"
 modo_home = "auto"
 modo_arm = "auto"
 armado_actual = None
-IP_ROUTER = os.getenv("IP_ROUTER", "192.168.1.1")
 tarea_auto_arm = None
 blink = None
 CHECK_INTERVAL = 60
@@ -79,6 +80,12 @@ def cargar_max_id_videos():
     return max_id
 
 contador_videos = max(cargar_max_id(), cargar_max_id_videos()) + 1
+
+orden_camaras_env = os.getenv("ORDEN_CAMARAS", "")
+ORDEN_CAMARAS = orden_camaras_env.split(",") if orden_camaras_env else []
+
+def order(cameras):
+    return OrderedDict((nombre, cameras[nombre]) for nombre in ORDEN_CAMARAS if nombre in cameras)
 
 async def manejar_comando(texto, message_id, chat_id, user_id):
     global tarea_auto_arm, CHECK_INTERVAL, modo_home, tarea_auto_arm, modo_arm, tarea_principal
@@ -275,9 +282,14 @@ async def comando_nocturno(texto, chat_id):
     telegram_enviar(f"⏰ Horario nocturno actualizado: {HORA_ARMADO_INICIO.strftime('%H:%M')} a {HORA_ARMADO_FIN.strftime('%H:%M')}", chat_id)
 
 async def comando_cap(chat_id):
-    for nombre, camera in blink.cameras.items():
+    for nombre, camera in order(blink.cameras).items():
         try:
-            await camera.snap_picture()
+            response = await camera.snap_picture()
+            if not response:
+                print(f"⚠️ {camera.name} no respondió al snap_picture")
+            elif isinstance(response, dict) and "code" in response:
+                if response["code"] != 200:
+                    print(f"❌ Error HTTP {response['code']} al capturar con {camera.name}")
             fecha_archivo = datetime.now().strftime("%Y%m%d_%H%M%S")
             fecha_str = datetime.strptime(fecha_archivo, "%Y%m%d_%H%M%S").strftime("%H-%M-%S del %d-%m-%y")
             filename = f"{nombre}_{fecha_str}.jpg"
@@ -350,7 +362,7 @@ async def comando_cams(chat_id):
         telegram_enviar("❌ Blink no conectado.", chat_id)
         return
     cámaras = []
-    for nombre, cam in blink.cameras.items():
+    for nombre, cam in order(blink.cameras).items():
         estado = "🔒 Armado" if cam.arm else "🔓 Desarmado"
         attrs = cam.attributes
         estado_bateria = attrs.get("battery_voltage", "N/A")
@@ -370,7 +382,7 @@ async def comando_last(chat_id):
         telegram_enviar("❌ Blink no conectado.", chat_id)
         return
     any_video = False
-    for nombre, cam in blink.cameras.items():
+    for nombre, cam in order(blink.cameras).items():
         video_bytes = cam.video_from_cache
         if video_bytes:
             any_video = True
@@ -649,7 +661,7 @@ async def vigilar_movimiento(chat_id):
     while not APAGAR_BOT.is_set():
         try:
             await blink.refresh()
-            for nombre, cam in blink.cameras.items():
+            for nombre, cam in order(blink.cameras).items():
                 video_bytes = cam.video_from_cache
                 if not video_bytes:
                     continue
@@ -809,9 +821,14 @@ async def captura_cada_hora():
         espera = (siguiente_hora - ahora).total_seconds()
         await asyncio.sleep(espera)
         try:
-            for nombre, camera in blink.cameras.items():
+            for nombre, camera in order(blink.cameras).items():
                 try:
-                    await camera.snap_picture()
+                    response = await camera.snap_picture()
+                    if not response:
+                        print(f"⚠️ {camera.name} no respondió al snap_picture")
+                    elif isinstance(response, dict) and "code" in response:
+                        if response["code"] != 200:
+                            print(f"❌ Error HTTP {response['code']} al capturar con {camera.name}")
                     await asyncio.sleep(5)
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     filename = f"{nombre}_{timestamp}.jpg"
