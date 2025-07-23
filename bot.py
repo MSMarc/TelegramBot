@@ -113,12 +113,16 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
             "🎞️ /last – Descarga últimos vídeos\n"
             "📼 /videos – Lista vídeos recientes\n"
             "🎬 /video <nº> – Envía vídeo concreto\n"
-            "📸 /cap – Foto actual de cámaras\n"
+            "📸 /cap – Foto actual de todas las cámaras\n"
+            "📹 /rec – Video actual de una cámara\n"
             "💎 /authorize – Autoriza a otro usuario\n"
             "⏰ /nocturno – Permite cambiar el horario nocturno\n"
+            "🚪 /abrir – Abre la puerta principal de casa\n"
             "🛑 /stop – Apaga el bot\n"
         )
         telegram_enviar(ayuda, chat_id)
+    elif texto == "/test":
+        telegram_enviar("📄 Test hecho, revisa logs")
     elif texto == "/refresh":
         await blink.refresh()
     elif texto == "/list":
@@ -207,6 +211,45 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
             telegram_enviar("❌ Blink no conectado.", chat_id)
             return
         await comando_cap(chat_id)
+    elif texto.startswith("/rec"):
+        if texto.strip() == "/rec":
+            mensaje = "📹 Cámaras disponibles:\n"
+            for i, nombre in enumerate(ORDEN_CAMARAS, start=1):
+                mensaje += f"{i}. {nombre}\n"
+            mensaje += "\nUsa `/rec X` para grabar o `/rec all` para grabar todas"
+            telegram_enviar(mensaje, chat_id)
+        else:
+            partes = texto.split()
+            if len(partes) != 2:
+                telegram_enviar("❌ Uso incorrecto. Prueba `/rec X` o `/rec all`", chat_id)
+            else:
+                if partes[1].lower() == "all":
+                    telegram_enviar("▶️ Grabando desde todas las cámaras... Se enviará al finalizar", chat_id)
+                    errores = []
+                    for nombre in ORDEN_CAMARAS:
+                        nombre_webhook = nombre.lower().replace(" ", "_")
+                        try:
+                            requests.post(f"http://localhost:8123/api/webhook/grabar_{nombre_webhook}")
+                        except Exception as e:
+                            errores.append(f"{nombre}: {e}")
+                    if errores:
+                        telegram_enviar("❌ Algunos errores al lanzar webhooks:\n" + "\n".join(errores), chat_id)
+                    else:
+                        telegram_enviar("✅ Grabación lanzada para todas las cámaras.", chat_id)
+                elif not partes[1].isdigit():
+                    telegram_enviar("❌ Uso incorrecto. Prueba `/rec X` o `/rec all`", chat_id)
+                else:
+                    indice = int(partes[1]) - 1
+                    if 0 <= indice < len(ORDEN_CAMARAS):
+                        nombre = ORDEN_CAMARAS[indice]
+                        nombre_webhook = nombre.lower().replace(" ", "_")
+                        try:
+                            telegram_enviar(f"▶️ Grabando desde {nombre}... Se enviará al finalizar", chat_id)
+                            requests.post(f"http://localhost:8123/api/webhook/grabar_{nombre_webhook}")
+                        except Exception as e:
+                            telegram_enviar(f"❌ Error al lanzar webhook: {e}", chat_id)
+                    else:
+                        telegram_enviar("❌ Número fuera de rango.", chat_id)
     elif texto.startswith("/authorize"):
         await manejar_autorize(texto, chat_id)
     elif texto.startswith("/nocturno"):
@@ -255,9 +298,10 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
             telegram_enviar(f"❌ Error etiquetando vídeo: {e}", chat_id)
     elif texto == "/test":
         telegram_enviar("❌ Comando eliminado por el admin.")
+    elif texto == "/abrir":
+        requests.post("http://localhost:8123/api/webhook/obrir-porta-principal")
     else:
         telegram_enviar("❌ Comando no soportado", chat_id)
-
 
 async def comando_nocturno(texto, chat_id):
     global HORA_ARMADO_INICIO, HORA_ARMADO_FIN
