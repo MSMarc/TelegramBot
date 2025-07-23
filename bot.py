@@ -13,6 +13,7 @@ import aiohttp
 import aiofiles
 from datetime import time
 from collections import OrderedDict
+from telegram import Bot
 
 load_dotenv()
 
@@ -251,10 +252,13 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
                     else:
                         telegram_enviar("❌ Número fuera de rango.", chat_id)
     elif texto.startswith("/authorize"):
-        await manejar_autorize(texto, chat_id)
+        await manejar_authorize(texto, chat_id, user_id, Bot(TELEGRAM_TOKEN))
     elif texto.startswith("/nocturno"):
         await comando_nocturno(texto, chat_id)
     elif texto == "/stop":
+        if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
+            telegram_enviar("❌ Solo el administrador del bot puede usar /stop", chat_id)
+            return
         telegram_enviar("🛑 Bot apagado.", chat_id)
         APAGAR_BOT.set()
         for task in asyncio.all_tasks():
@@ -820,27 +824,29 @@ def actualizar_env():
     with open(".env", "w") as f:
         f.write("\n".join(nuevas_lineas) + "\n")
 
-async def manejar_autorize(texto, chat_id, user, bot):
+async def manejar_authorize(texto, chat_id, user_id, bot):
     global USUARIOS_AUTORIZADOS
-    usuario_id = str(user.id)
-    if usuario_id != USUARIOS_AUTORIZADOS[0]:
-        telegram_enviar("❌ Solo el usuario principal puede usar /autorize", chat_id)
+    if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
+        telegram_enviar("❌ Solo el administrador del bot puede usar /authorize", chat_id)
         return
     partes = texto.split()
     if len(partes) != 2:
-        telegram_enviar("❌ Uso correcto: /autorize @username", chat_id)
+        telegram_enviar("❌ Uso correcto: /authorize @username", chat_id)
         return
     username = partes[1].lstrip("@")
     try:
         chat_info = await bot.get_chat(f"@{username}")
-        nuevo_usuario_id = str(chat_info.id)
+        nuevo_user_id = str(chat_info.id)
     except Exception as e:
-        telegram_enviar(f"❌ No se pudo obtener el user_id de @{username}: {e}", chat_id)
+        if "Chat not found" in str(e):
+            telegram_enviar(f"⚠️ @{username} debe enviarme antes un mensaje @MarcMS_Bot", chat_id)
+        else:
+            telegram_enviar(f"❌ No se pudo obtener el user_id de @{username}: {e}", chat_id)
         return
-    if nuevo_usuario_id in USUARIOS_AUTORIZADOS:
+    if nuevo_user_id in USUARIOS_AUTORIZADOS:
         telegram_enviar("⚠️ Usuario ya autorizado.", chat_id)
         return
-    USUARIOS_AUTORIZADOS.append(nuevo_usuario_id)
+    USUARIOS_AUTORIZADOS.append(nuevo_user_id)
     actualizar_env()
     telegram_enviar(f"✅ Usuario @{username} autorizado correctamente.", chat_id)
 
