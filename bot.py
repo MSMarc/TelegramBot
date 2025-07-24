@@ -286,11 +286,17 @@ async def comando_cams(chat_id):
         estado = "🔒 Armado" if cam.arm else "🔓 Desarmado"
         serial = attrs.get("serial", "N/D")
         bateria_estado = attrs.get("battery", "N/A").lower()
-        bateria_emoji = "✅" if bateria_estado == "ok" else "⚠️"
         bateria_volt = attrs.get("battery_voltage", None)
-        bateria = f"{bateria_emoji}"
-        if bateria_volt is not None:
-            bateria += f" {bateria_volt}"
+        if bateria_estado == "ok" and bateria_volt is not None:
+            if bateria_volt >= 165:
+                bateria_emoji = "✅"
+            elif 155 <= bateria_volt < 165:
+                bateria_emoji = "⚠️"
+            else:
+                bateria_emoji = "❌"
+        else:
+            bateria_emoji = "❌"
+        bateria = f"{bateria_emoji} {bateria_volt if bateria_volt else 'N/A'}"
         temp_c = attrs.get("temperature_c", None)
         if temp_c is None:
             temp_str = "N/A"
@@ -421,12 +427,11 @@ async def comando_cap(chat_id):
                 if response["code"] != 200:
                     print(f"❌ Error HTTP {response['code']} al capturar con {camera.name}")
             fecha_archivo = datetime.now().strftime("%Y%m%d_%H%M%S")
-            fecha_str = datetime.strptime(fecha_archivo, "%Y%m%d_%H%M%S").strftime("%H-%M-%S del %d-%m-%y")
-            filename = f"{nombre}_{fecha_str}.jpg"
+            filename = f"{nombre}_{fecha_archivo}.jpg"
             path = os.path.join("fotos", filename)
             os.makedirs("fotos", exist_ok=True)
             await camera.image_to_file(path)
-            telegram_enviar(f"📸 Foto de *{nombre}* tomada a las {fecha_str}", chat_id)
+            telegram_enviar(f"📸 Foto de *{nombre}*", chat_id)
             telegram_enviar_foto(chat_id, path)
         except Exception as e:
             telegram_enviar(f"❌ Error tomando foto en {nombre}: {e}", chat_id)
@@ -436,7 +441,7 @@ def comando_rec(texto, chat_id):
         mensaje = "📹 Cámaras disponibles:\n"
         for i, nombre in enumerate(ORDEN_CAMARAS, start=1):
             mensaje += f"{i}. {nombre}\n"
-        mensaje += "\nUsa `/rec X` para grabar o `/rec all` para grabar todas"
+        mensaje += "\nUsa `/rec X` para elegir cámara o `/rec all` para grabar en todas"
         telegram_enviar(mensaje, chat_id)
     else:
         partes = texto.split()
@@ -476,26 +481,27 @@ async def comando_authorize(texto, chat_id, user_id, bot):
     if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
         telegram_enviar("❌ Solo el administrador del bot puede usar /authorize", chat_id)
         return
-    partes = texto.split()
-    if len(partes) != 2:
-        telegram_enviar("❌ Uso correcto: /authorize @username", chat_id)
-        return
-    username = partes[1].lstrip("@")
-    try:
-        chat_info = await bot.get_chat(f"@{username}")
-        nuevo_user_id = str(chat_info.id)
-    except Exception as e:
-        if "Chat not found" in str(e):
-            telegram_enviar(f"⚠️ @{username} debe enviarme antes un mensaje @MarcMS_Bot", chat_id)
-        else:
-            telegram_enviar(f"❌ No se pudo obtener el user_id de @{username}: {e}", chat_id)
-        return
-    if nuevo_user_id in USUARIOS_AUTORIZADOS:
-        telegram_enviar("⚠️ Usuario ya autorizado.", chat_id)
-        return
-    USUARIOS_AUTORIZADOS.append(nuevo_user_id)
-    actualizar_env()
-    telegram_enviar(f"✅ Usuario @{username} autorizado correctamente.", chat_id)
+    telegram_enviar("⚙️ Comando en desarrollo")
+    # partes = texto.split()
+    # if len(partes) != 2:
+    #     telegram_enviar("❌ Uso correcto: /authorize @username", chat_id)
+    #     return
+    # username = partes[1].lstrip("@")
+    # try:
+    #     chat_info = await bot.get_chat(f"@{username}")
+    #     nuevo_user_id = str(chat_info.id)
+    # except Exception as e:
+    #     if "Chat not found" in str(e):
+    #         telegram_enviar(f"⚠️ @{username} debe enviarme antes un mensaje @MarcMS\\_Bot", chat_id)
+    #     else:
+    #         telegram_enviar(f"❌ No se pudo obtener el user_id de {username}: {e}", chat_id)
+    #     return
+    # if nuevo_user_id in USUARIOS_AUTORIZADOS:
+    #     telegram_enviar("⚠️ Usuario ya autorizado.", chat_id)
+    #     return
+    # USUARIOS_AUTORIZADOS.append(nuevo_user_id)
+    # actualizar_env()
+    # telegram_enviar(f"✅ Usuario {username} autorizado correctamente.", chat_id)
 
 async def comando_nocturno(texto, chat_id):
     global HORA_ARMADO_INICIO, HORA_ARMADO_FIN
@@ -630,12 +636,13 @@ async def telegram_recibir():
                 return
             await asyncio.sleep(0.1)
 
-def telegram_enviar(text, chat_id=None):
+def telegram_enviar(texto, chat_id=None):
+    texto=texto.replace("_","\\_")
     if chat_id is None:
         print("❌ chat_id no especificado en telegram_enviar")
         return None
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
+    data = {"chat_id": chat_id, "text": texto, "parse_mode": "Markdown"}
     try:
         r = requests.post(url, data=data)
         r.raise_for_status()
@@ -643,7 +650,8 @@ def telegram_enviar(text, chat_id=None):
         return respuesta.get("result", {}).get("message_id")
     except Exception as e:
         print("❌ Error enviando Telegram:", e)
-        return None
+        if e.response is not None:
+            print("Respuesta de Telegram:", e.response.text)
 
 def telegram_enviar_foto(chat_id, path):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
