@@ -15,34 +15,7 @@ from datetime import time
 from collections import OrderedDict
 from telegram import Bot
 
-load_dotenv()
-
-IP_DISPOSITIVOS = os.getenv("IP_DISPOSITIVOS", "").split(",")
-NOMBRES_DISPOSITIVOS = os.getenv("NOMBRES_DISPOSITIVOS", "").split(",")
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-BLINK_USER = os.getenv("BLINK_USER")
-BLINK_PASS = os.getenv("BLINK_PASS")
-BLINK_MODULE = os.getenv("BLINK_MODULE")
-USUARIOS_AUTORIZADOS = os.getenv("USUARIOS_AUTORIZADOS", "").split(",")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-IP_ROUTER = os.getenv("IP_ROUTER", "192.168.1.1")
-REFRESH_SOLICITADO = asyncio.Event()
-APAGAR_BOT = asyncio.Event()
-CONFIG_PATH = "blink_config.json"
-RUTA_ETIQUETAS = "etiquetas_videos.json"
-modo_home = "auto"
-modo_arm = "auto"
-armado_actual = None
-tarea_auto_arm = None
-blink = None
-CHECK_INTERVAL = 60
-ULTIMOS_CLIPS = {}
-videos_ultimas_24h = []
-tarea_vigilancia = None
-tarea_principal = None
-session = None
-presencia_anterior = None
-dentro_horario_anterior = False
+#Cargar datos
 
 def leer_hora_env(nombre_var, default_hora):
     valor = os.getenv(nombre_var, None)
@@ -53,9 +26,6 @@ def leer_hora_env(nombre_var, default_hora):
         except Exception:
             print(f"⚠️ Formato inválido para {nombre_var}, usando valor por defecto {default_hora}")
     return default_hora
-
-HORA_ARMADO_INICIO = leer_hora_env("HORA_ARMADO_INICIO", time(0,30))
-HORA_ARMADO_FIN = leer_hora_env("HORA_ARMADO_FIN", time(8,0))
 
 def cargar_max_id():
     if not os.path.exists(RUTA_ETIQUETAS):
@@ -80,13 +50,43 @@ def cargar_max_id_videos():
             max_id = max(max_id, int(match.group(1)))
     return max_id
 
-contador_videos = max(cargar_max_id(), cargar_max_id_videos()) + 1
-
-orden_camaras_env = os.getenv("ORDEN_CAMARAS", "")
-ORDEN_CAMARAS = orden_camaras_env.split(",") if orden_camaras_env else []
-
 def order(cameras):
     return OrderedDict((nombre, cameras[nombre]) for nombre in ORDEN_CAMARAS if nombre in cameras)
+
+load_dotenv()
+
+IP_DISPOSITIVOS = list(filter(None, os.getenv("IP_DISPOSITIVOS", "").split(",")))
+NOMBRES_DISPOSITIVOS = list(filter(None, os.getenv("NOMBRES_DISPOSITIVOS", "").split(",")))
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+BLINK_USER = os.getenv("BLINK_USER")
+BLINK_PASS = os.getenv("BLINK_PASS")
+BLINK_MODULE = os.getenv("BLINK_MODULE")
+USUARIOS_AUTORIZADOS = list(filter(None, os.getenv("USUARIOS_AUTORIZADOS", "").split(",")))
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+IP_ROUTER = os.getenv("IP_ROUTER", "192.168.1.1")
+ORDEN_CAMARAS = list(filter(None, os.getenv("ORDEN_CAMARAS", "").split(",")))
+REFRESH_SOLICITADO = asyncio.Event()
+APAGAR_BOT = asyncio.Event()
+CONFIG_PATH = "blink_config.json"
+RUTA_ETIQUETAS = "etiquetas_videos.json"
+modo_home = "auto"
+modo_arm = "auto"
+armado_actual = None
+tarea_auto_arm = None
+blink = None
+CHECK_INTERVAL = 60
+ULTIMOS_CLIPS = {}
+videos_ultimas_24h = []
+tarea_vigilancia = None
+tarea_principal = None
+session = None
+presencia_anterior = None
+dentro_horario_anterior = False
+HORA_ARMADO_INICIO = leer_hora_env("HORA_ARMADO_INICIO", time(0, 30))
+HORA_ARMADO_FIN = leer_hora_env("HORA_ARMADO_FIN", time(8, 0))
+contador_videos = max(cargar_max_id(), cargar_max_id_videos()) + 1
+
+#Gestionar comandos
 
 async def manejar_comando(texto, message_id, chat_id, user_id):
     global tarea_auto_arm, CHECK_INTERVAL, modo_home, tarea_auto_arm, modo_arm, tarea_principal
@@ -282,13 +282,44 @@ async def comando_cams(chat_id):
         return
     cámaras = []
     for nombre, cam in order(blink.cameras).items():
-        estado = "🔒 Armado" if cam.arm else "🔓 Desarmado"
         attrs = cam.attributes
-        estado_bateria = attrs.get("battery_voltage", "N/A")
+        estado = "🔒 Armado" if cam.arm else "🔓 Desarmado"
+        serial = attrs.get("serial", "N/D")
+        bateria_estado = attrs.get("battery", "N/A").lower()
+        bateria_emoji = "✅" if bateria_estado == "ok" else "⚠️"
+        bateria_volt = attrs.get("battery_voltage", None)
+        bateria = f"{bateria_emoji}"
+        if bateria_volt is not None:
+            bateria += f" {bateria_volt}"
+        temp_c = attrs.get("temperature_c", None)
+        if temp_c is None:
+            temp_str = "N/A"
+        else:
+            if temp_c < 40:
+                temp_emoji = "✅"
+            elif 40 <= temp_c <= 45:
+                temp_emoji = "⚠️"
+            else:
+                temp_emoji = "❌"
+            temp_str = f"{temp_emoji} {temp_c} °C"
+        wifi = attrs.get("wifi_strength", None)
+        if wifi is None:
+            wifi_str = "N/A"
+        else:
+            if wifi >= -65:
+                wifi_emoji = "✅"
+            elif -70 <= wifi < -65:
+                wifi_emoji = "⚠️"
+            else:
+                wifi_emoji = "❌"
+            wifi_str = f"{wifi_emoji} {wifi} dBm"
         cámaras.append(
             f"*{nombre}*\n"
+            f"Serial: {serial}\n"
             f"Estado: {estado}\n"
-            f"Batería: {estado_bateria}\n"
+            f"Batería: {bateria}\n"
+            f"Temperatura: {temp_str}\n"
+            f"WiFi: {wifi_str}\n"
         )
     mensaje = "📷 *Cámaras disponibles:*\n\n" + "\n".join(cámaras) if cámaras else "⚠️ No se encontraron cámaras."
     telegram_enviar(mensaje, chat_id)
@@ -546,17 +577,58 @@ def comando_video_n(texto, chat_id):
     except Exception as e:
         telegram_enviar(f"❌ Error etiquetando vídeo: {e}", chat_id)
 
-async def crear_sesion():
-    global session
-    if session is None:
-        session = aiohttp.ClientSession()
-    return session
+#Gestionar telegram
 
-async def cerrar_sesion():
-    global session
-    if session:
-        await session.close()
-        session = None
+async def telegram_recibir():
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates"
+    last_update = 0
+    try:
+        r = requests.get(url)
+        r.raise_for_status()
+        data = r.json()
+        updates = data.get("result", [])
+        if updates:
+            last_update = max(update["update_id"] for update in updates)
+            requests.get(url, params={"offset": last_update + 1})
+    except Exception as e:
+        print("❌ Error limpiando updates antiguos:", e)
+    while not APAGAR_BOT.is_set():
+        try:
+            r = requests.get(url, params={"offset": last_update + 1}, timeout=5)
+            r.raise_for_status()
+            data = r.json()
+            for result in data.get("result", []):
+                last_update = result["update_id"]
+                mensaje = result.get("message")
+                if mensaje:
+                    texto = mensaje.get("text", "")
+                    mid = mensaje.get("message_id")
+                    chat_id = mensaje.get("chat", {}).get("id")
+                    user_id = mensaje.get("from", {}).get("id")
+                    await manejar_comando(texto, mid, chat_id, user_id)
+        except requests.exceptions.RequestException as e:
+            print("🛜 Posible perdida de conexión a internet:", e)
+            await asyncio.sleep(10)
+            continue
+        # except requests.exceptions.HTTPError as e:
+        #     if e.response.status_code == 409:
+        #         print("⚠️ Conflicto con webhook (409), eliminando webhook...")
+        #         try:
+        #             requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/deleteWebhook")
+        #         except Exception as e2:
+        #             print("❌ Error al eliminar webhook:", e2)
+        #         await asyncio.sleep(2)
+        #         continue
+        #     else:
+        #         print("❌ Error HTTP inesperado:", e)
+        #         await asyncio.sleep(10)
+        #         continue
+        except Exception as e:
+            print("❌ Error al recibir mensajes:", e)
+        for _ in range(20):
+            if APAGAR_BOT.is_set():
+                return
+            await asyncio.sleep(0.1)
 
 def telegram_enviar(text, chat_id=None):
     if chat_id is None:
@@ -628,56 +700,19 @@ def telegram_eliminar(message_id, chat_id):
         print("❌ Error eliminando Telegram:", e)
         return False
 
-async def recibir_mensajes():
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates"
-    last_update = 0
-    try:
-        r = requests.get(url)
-        r.raise_for_status()
-        data = r.json()
-        updates = data.get("result", [])
-        if updates:
-            last_update = max(update["update_id"] for update in updates)
-            requests.get(url, params={"offset": last_update + 1})
-    except Exception as e:
-        print("❌ Error limpiando updates antiguos:", e)
-    while not APAGAR_BOT.is_set():
-        try:
-            r = requests.get(url, params={"offset": last_update + 1}, timeout=5)
-            r.raise_for_status()
-            data = r.json()
-            for result in data.get("result", []):
-                last_update = result["update_id"]
-                mensaje = result.get("message")
-                if mensaje:
-                    texto = mensaje.get("text", "")
-                    mid = mensaje.get("message_id")
-                    chat_id = mensaje.get("chat", {}).get("id")
-                    user_id = mensaje.get("from", {}).get("id")
-                    await manejar_comando(texto, mid, chat_id, user_id)
-        except requests.exceptions.RequestException as e:
-            print("🛜 Posible perdida de conexión a internet:", e)
-            await asyncio.sleep(10)
-            continue
-        # except requests.exceptions.HTTPError as e:
-        #     if e.response.status_code == 409:
-        #         print("⚠️ Conflicto con webhook (409), eliminando webhook...")
-        #         try:
-        #             requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/deleteWebhook")
-        #         except Exception as e2:
-        #             print("❌ Error al eliminar webhook:", e2)
-        #         await asyncio.sleep(2)
-        #         continue
-        #     else:
-        #         print("❌ Error HTTP inesperado:", e)
-        #         await asyncio.sleep(10)
-        #         continue
-        except Exception as e:
-            print("❌ Error al recibir mensajes:", e)
-        for _ in range(20):
-            if APAGAR_BOT.is_set():
-                return
-            await asyncio.sleep(0.1)
+#Gestionar Blink
+
+async def crear_sesion():
+    global session
+    if session is None:
+        session = aiohttp.ClientSession()
+    return session
+
+async def cerrar_sesion():
+    global session
+    if session:
+        await session.close()
+        session = None
 
 async def conectar_blink():
     global blink
@@ -730,6 +765,8 @@ async def desactivar_blink(chat_id):
     except Exception as e:
         telegram_enviar(f"❌ Error desactivando Blink: {e}", chat_id)
 
+#Bucles
+
 async def loop_principal(chat_id):
     global modo_home, modo_arm, armado_actual, APAGAR_BOT, CHECK_INTERVAL, dentro_horario_anterior
     while not APAGAR_BOT.is_set():
@@ -776,6 +813,27 @@ async def loop_principal(chat_id):
             await asyncio.sleep(10)
     print("end loop_principal")
 
+async def detectar_presencia(chat_id=None):
+    global presencia_anterior
+    try:
+        router_ok = await async_ping(IP_ROUTER)
+        if not router_ok:
+            return None
+        presencia_actual = False
+        for ip in IP_DISPOSITIVOS:
+            if await async_ping(ip.strip()):
+                presencia_actual = True
+                break
+        if chat_id is not None and presencia_anterior is not None:
+            if presencia_anterior == True and presencia_actual == False:
+                telegram_enviar(f"🏠 /home auto ha detectado casa vacía.", chat_id)
+            elif presencia_anterior == False and presencia_actual == True:
+                telegram_enviar(f"🏠 /home auto ha detectado alguien en casa.", chat_id)
+        presencia_anterior = presencia_actual
+        return presencia_actual
+    except Exception as e:
+        print(f"❌ Error en detectar_presencia: {e}")
+
 async def vigilar_movimiento(chat_id):
     global ULTIMOS_CLIPS, videos_ultimas_24h, contador_videos
     refresco=30
@@ -815,26 +873,33 @@ async def vigilar_movimiento(chat_id):
             print("❌ Error en vigilancia de movimiento:", e)
             await asyncio.sleep(refresco)
 
-async def detectar_presencia(chat_id=None):
-    global presencia_anterior
-    try:
-        router_ok = await async_ping(IP_ROUTER)
-        if not router_ok:
-            return None
-        presencia_actual = False
-        for ip in IP_DISPOSITIVOS:
-            if await async_ping(ip.strip()):
-                presencia_actual = True
-                break
-        if chat_id is not None and presencia_anterior is not None:
-            if presencia_anterior == True and presencia_actual == False:
-                telegram_enviar(f"🏠 /home auto ha detectado casa vacía.", chat_id)
-            elif presencia_anterior == False and presencia_actual == True:
-                telegram_enviar(f"🏠 /home auto ha detectado alguien en casa.", chat_id)
-        presencia_anterior = presencia_actual
-        return presencia_actual
-    except Exception as e:
-        print(f"❌ Error en detectar_presencia: {e}")
+async def captura_cada_hora():
+    os.makedirs("fotos", exist_ok=True)
+    while not APAGAR_BOT.is_set():
+        ahora = datetime.now()
+        siguiente_hora = (ahora + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+        espera = (siguiente_hora - ahora).total_seconds()
+        await asyncio.sleep(espera)
+        try:
+            for nombre, camera in order(blink.cameras).items():
+                try:
+                    response = await camera.snap_picture()
+                    if not response:
+                        print(f"⚠️ {camera.name} no respondió al snap_picture")
+                    elif isinstance(response, dict) and "code" in response:
+                        if response["code"] != 200:
+                            print(f"❌ Error HTTP {response['code']} al capturar con {camera.name}")
+                    await asyncio.sleep(5)
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filename = f"{nombre}_{timestamp}.jpg"
+                    path = os.path.join("fotos", filename)
+                    await camera.image_to_file(path)
+                except Exception as e:
+                    print(f"❌ Error capturando con {nombre}: {e}")
+        except Exception as e:
+            print(f"⚠️ Error global en captura: {e}")
+
+#Utilidades
 
 async def async_ping(ip):
     system = platform.system().lower()
@@ -885,44 +950,7 @@ def actualizar_env():
     with open(".env", "w") as f:
         f.write("\n".join(nuevas_lineas) + "\n")
 
-async def enviar_estado(chat_id):
-    estados_actuales = {}
-    for ip, nombre in zip(IP_DISPOSITIVOS, NOMBRES_DISPOSITIVOS):
-        conectado = await async_ping(ip.strip())
-        estados_actuales[nombre.strip()] = conectado
-    ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    lineas = [f"*Dispositivos a las* `{ahora}`"]
-    for nombre in NOMBRES_DISPOSITIVOS:
-        tick = "✅" if estados_actuales.get(nombre.strip(), False) else "❌"
-        lineas.append(f"{tick} {nombre.strip()}")
-    texto = "\n".join(lineas)
-    telegram_enviar(texto, chat_id)
-
-async def captura_cada_hora():
-    os.makedirs("fotos", exist_ok=True)
-    while not APAGAR_BOT.is_set():
-        ahora = datetime.now()
-        siguiente_hora = (ahora + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
-        espera = (siguiente_hora - ahora).total_seconds()
-        await asyncio.sleep(espera)
-        try:
-            for nombre, camera in order(blink.cameras).items():
-                try:
-                    response = await camera.snap_picture()
-                    if not response:
-                        print(f"⚠️ {camera.name} no respondió al snap_picture")
-                    elif isinstance(response, dict) and "code" in response:
-                        if response["code"] != 200:
-                            print(f"❌ Error HTTP {response['code']} al capturar con {camera.name}")
-                    await asyncio.sleep(5)
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    filename = f"{nombre}_{timestamp}.jpg"
-                    path = os.path.join("fotos", filename)
-                    await camera.image_to_file(path)
-                except Exception as e:
-                    print(f"❌ Error capturando con {nombre}: {e}")
-        except Exception as e:
-            print(f"⚠️ Error global en captura: {e}")
+#Main
 
 async def main():
     global tarea_principal
@@ -933,7 +961,7 @@ async def main():
         print(f"⚠️ No se pudo conectar a Blink al inicio: {e}")
     tarea_principal = asyncio.create_task(loop_principal(TELEGRAM_CHAT_ID))
     tareas = [
-        asyncio.create_task(recibir_mensajes()),
+        asyncio.create_task(telegram_recibir()),
         asyncio.create_task(captura_cada_hora()),
         tarea_principal
     ]
