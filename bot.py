@@ -34,7 +34,6 @@ RUTA_ETIQUETAS = "etiquetas_videos.json"
 modo_home = "auto"
 modo_arm = "auto"
 armado_actual = None
-tarea_auto_arm = None
 blink = None
 CHECK_INTERVAL = 60
 ULTIMOS_CLIPS = {}
@@ -90,7 +89,6 @@ contador_videos = max(cargar_max_id(), cargar_max_id_videos()) + 1
 #Gestionar comandos
 
 async def manejar_comando(texto, message_id, chat_id, user_id):
-    global tarea_auto_arm, CHECK_INTERVAL, tarea_auto_arm, tarea_principal
     if str(user_id) not in USUARIOS_AUTORIZADOS:
         telegram_enviar("❌ Acceso denegado. Contacta con el administrador para usarme.", chat_id)
         return
@@ -235,7 +233,7 @@ async def comando_arm_bool(activar: bool, chat_id):
             tarea_vigilancia = None
 
 async def comando_arm(texto, chat_id):
-    global modo_arm
+    global modo_arm, tarea_principal
     from bot import loop_principal
     partes = texto.split()
     if len(partes) == 2 and partes[1] in ["auto", "true", "false"]:
@@ -257,7 +255,7 @@ async def comando_arm(texto, chat_id):
         telegram_enviar("❌ Uso: /arm true | false | auto", chat_id)
 
 async def comando_home(texto, chat_id):
-    global modo_home
+    global modo_home, tarea_principal
     from bot import loop_principal
     partes = texto.split()
     if len(partes) == 2 and partes[1] in ["auto", "true", "false"]:
