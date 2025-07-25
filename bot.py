@@ -169,7 +169,6 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
         telegram_enviar("❌ Comando no soportado", chat_id)
 
 async def comando_list(chat_id):
-    print(IP_DISPOSITIVOS, NOMBRES_DISPOSITIVOS)
     dispositivos = []
     for ip, nombre in zip(IP_DISPOSITIVOS, NOMBRES_DISPOSITIVOS):
         nombre = nombre.strip()
@@ -921,17 +920,34 @@ async def async_ping(ip):
     return proc.returncode == 0
 
 def obtener_mac(ip):
+    sistema = platform.system().lower()
     try:
-        resultado = subprocess.check_output(["arp", "-a"], stderr=subprocess.DEVNULL, text=True)
-        for linea in resultado.splitlines():
-            if ip in linea:
-                partes = linea.split()
-                for parte in partes:
-                    if "-" in parte and len(parte) == 17:
-                        return parte
-        return "MAC no encontrada"
+        if "windows" in sistema:
+            resultado = subprocess.check_output(["arp", "-a"], stderr=subprocess.DEVNULL, text=True)
+            for linea in resultado.splitlines():
+                if ip in linea:
+                    partes = linea.split()
+                    for parte in partes:
+                        if "-" in parte and len(parte) == 17:
+                            return parte.upper()
+            return "MAC no encontrada"
+        elif "linux" in sistema or "darwin" in sistema:
+            if os.path.exists("/proc/net/arp"):
+                with open("/proc/net/arp") as f:
+                    for line in f.readlines()[1:]:  # saltar encabezado
+                        fields = line.split()
+                        if fields[0] == ip:
+                            return fields[3].upper()
+            else:
+                resultado = subprocess.check_output(["arp", ip], stderr=subprocess.DEVNULL, text=True)
+                for parte in resultado.split():
+                    if ":" in parte and len(parte) == 17:
+                        return parte.upper()
+            return "MAC no encontrada"
+        else:
+            return f"Sistema no soportado: {sistema}"
     except Exception as e:
-        print(f"❌ Error obtener MAC de {ip}: {e}")
+        print(f"❌ Error al obtener MAC de {ip}: {e}")
         return "Error al obtener MAC"
 
 def actualizar_env():
