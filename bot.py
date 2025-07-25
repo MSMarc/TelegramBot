@@ -15,6 +15,36 @@ from datetime import time
 from collections import OrderedDict
 from telegram import Bot
 
+load_dotenv()
+
+IP_DISPOSITIVOS = list(filter(None, os.getenv("IP_DISPOSITIVOS", "").split(",")))
+NOMBRES_DISPOSITIVOS = list(filter(None, os.getenv("NOMBRES_DISPOSITIVOS", "").split(",")))
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+BLINK_USER = os.getenv("BLINK_USER")
+BLINK_PASS = os.getenv("BLINK_PASS")
+BLINK_MODULE = os.getenv("BLINK_MODULE")
+USUARIOS_AUTORIZADOS = list(filter(None, os.getenv("USUARIOS_AUTORIZADOS", "").split(",")))
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+IP_ROUTER = os.getenv("IP_ROUTER", "192.168.1.1")
+ORDEN_CAMARAS = list(filter(None, os.getenv("ORDEN_CAMARAS", "").split(",")))
+REFRESH_SOLICITADO = asyncio.Event()
+APAGAR_BOT = asyncio.Event()
+CONFIG_PATH = "blink_config.json"
+RUTA_ETIQUETAS = "etiquetas_videos.json"
+modo_home = "auto"
+modo_arm = "auto"
+armado_actual = None
+tarea_auto_arm = None
+blink = None
+CHECK_INTERVAL = 60
+ULTIMOS_CLIPS = {}
+videos_ultimas_24h = []
+tarea_vigilancia = None
+tarea_principal = None
+session = None
+presencia_anterior = None
+dentro_horario_anterior = False
+
 #Cargar datos
 
 def leer_hora_env(nombre_var, default_hora):
@@ -53,35 +83,6 @@ def cargar_max_id_videos():
 def order(cameras):
     return OrderedDict((nombre, cameras[nombre]) for nombre in ORDEN_CAMARAS if nombre in cameras)
 
-load_dotenv()
-
-IP_DISPOSITIVOS = list(filter(None, os.getenv("IP_DISPOSITIVOS", "").split(",")))
-NOMBRES_DISPOSITIVOS = list(filter(None, os.getenv("NOMBRES_DISPOSITIVOS", "").split(",")))
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-BLINK_USER = os.getenv("BLINK_USER")
-BLINK_PASS = os.getenv("BLINK_PASS")
-BLINK_MODULE = os.getenv("BLINK_MODULE")
-USUARIOS_AUTORIZADOS = list(filter(None, os.getenv("USUARIOS_AUTORIZADOS", "").split(",")))
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-IP_ROUTER = os.getenv("IP_ROUTER", "192.168.1.1")
-ORDEN_CAMARAS = list(filter(None, os.getenv("ORDEN_CAMARAS", "").split(",")))
-REFRESH_SOLICITADO = asyncio.Event()
-APAGAR_BOT = asyncio.Event()
-CONFIG_PATH = "blink_config.json"
-RUTA_ETIQUETAS = "etiquetas_videos.json"
-modo_home = "auto"
-modo_arm = "auto"
-armado_actual = None
-tarea_auto_arm = None
-blink = None
-CHECK_INTERVAL = 60
-ULTIMOS_CLIPS = {}
-videos_ultimas_24h = []
-tarea_vigilancia = None
-tarea_principal = None
-session = None
-presencia_anterior = None
-dentro_horario_anterior = False
 HORA_ARMADO_INICIO = leer_hora_env("HORA_ARMADO_INICIO", time(0, 30))
 HORA_ARMADO_FIN = leer_hora_env("HORA_ARMADO_FIN", time(8, 0))
 contador_videos = max(cargar_max_id(), cargar_max_id_videos()) + 1
@@ -89,7 +90,7 @@ contador_videos = max(cargar_max_id(), cargar_max_id_videos()) + 1
 #Gestionar comandos
 
 async def manejar_comando(texto, message_id, chat_id, user_id):
-    global tarea_auto_arm, CHECK_INTERVAL, modo_home, tarea_auto_arm, modo_arm, tarea_principal
+    global tarea_auto_arm, CHECK_INTERVAL, tarea_auto_arm, tarea_principal
     if str(user_id) not in USUARIOS_AUTORIZADOS:
         telegram_enviar("❌ Acceso denegado. Contacta con el administrador para usarme.", chat_id)
         return
@@ -128,7 +129,7 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
     elif texto == "/refresh":
         await blink.refresh()
     elif texto == "/list":
-        asyncio.create_task(comando_list(chat_id))
+        await comando_list(chat_id)
     elif texto.startswith("/add"):
         comando_add(texto, chat_id)
     elif texto.startswith("/delete"):
@@ -168,6 +169,7 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
         telegram_enviar("❌ Comando no soportado", chat_id)
 
 async def comando_list(chat_id):
+    print(IP_DISPOSITIVOS, NOMBRES_DISPOSITIVOS)
     dispositivos = []
     for ip, nombre in zip(IP_DISPOSITIVOS, NOMBRES_DISPOSITIVOS):
         nombre = nombre.strip()
@@ -234,6 +236,7 @@ async def comando_arm_bool(activar: bool, chat_id):
             tarea_vigilancia = None
 
 async def comando_arm(texto, chat_id):
+    global modo_arm
     from bot import loop_principal
     partes = texto.split()
     if len(partes) == 2 and partes[1] in ["auto", "true", "false"]:
@@ -255,6 +258,7 @@ async def comando_arm(texto, chat_id):
         telegram_enviar("❌ Uso: /arm true | false | auto", chat_id)
 
 async def comando_home(texto, chat_id):
+    global modo_home
     from bot import loop_principal
     partes = texto.split()
     if len(partes) == 2 and partes[1] in ["auto", "true", "false"]:
