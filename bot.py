@@ -32,8 +32,8 @@ APAGAR_BOT = asyncio.Event()
 CONFIG_PATH = "blink_config.json"
 RUTA_ETIQUETAS = "etiquetas_videos.json"
 modo_home = "auto"
-modo_arm = "auto"
-armado_actual = None
+modo_arm = "true"
+armado_actual = "true"
 blink = None
 CHECK_INTERVAL = 60
 ULTIMOS_CLIPS = {}
@@ -91,9 +91,10 @@ contador_videos = max(cargar_max_id(), cargar_max_id_videos()) + 1
 async def manejar_comando(texto, message_id, chat_id, user_id):
     if str(user_id) not in USUARIOS_AUTORIZADOS:
         telegram_enviar("❌ Acceso denegado. Contacta con el administrador para usarme.", chat_id)
+        print("Detectado uso no autorizado")
         return
     texto = texto.strip().lower()
-    texto.replace("@MarcMS_Bot", "")
+    texto = texto.replace("@marcms_bot", "")
     if not texto.startswith("/"):
         pass
     elif texto == "/start":
@@ -450,7 +451,6 @@ def comando_rec(texto, chat_id):
             telegram_enviar("❌ Uso incorrecto. Prueba `/rec X` o `/rec all`", chat_id)
         else:
             if partes[1].lower() == "all":
-                telegram_enviar("▶️ Grabando desde todas las cámaras... Se enviará al finalizar", chat_id)
                 errores = []
                 for nombre in ORDEN_CAMARAS:
                     nombre_webhook = nombre.lower().replace(" ", "_")
@@ -461,7 +461,7 @@ def comando_rec(texto, chat_id):
                 if errores:
                     telegram_enviar("❌ Algunos errores al lanzar webhooks:\n" + "\n".join(errores), chat_id)
                 else:
-                    telegram_enviar("✅ Grabación lanzada para todas las cámaras.", chat_id)
+                    telegram_enviar("▶️ Grabando desde todas las cámaras... Se enviará al finalizar", chat_id)
             elif not partes[1].isdigit():
                 telegram_enviar("❌ Uso incorrecto. Prueba `/rec X` o `/rec all`", chat_id)
             else:
