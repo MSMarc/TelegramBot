@@ -161,9 +161,11 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
     elif texto.startswith("/") and texto[1:].split()[0].isdigit():
         comando_video_n(texto, chat_id)
     elif texto == "/test":
-        telegram_enviar("❌ Comando eliminado por el admin.")
+        telegram_enviar("❌ Comando eliminado por el admin.", chat_id)
     elif texto == "/abrir":
         requests.post("http://localhost:8123/api/webhook/obrir-porta-principal")
+    elif texto.startwith("/say"):
+        telegram_enviar(texto.replace("/say ",""), -1002644873362)
     else:
         telegram_enviar("❌ Comando no soportado", chat_id)
 
