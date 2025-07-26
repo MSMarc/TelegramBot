@@ -32,10 +32,10 @@ APAGAR_BOT = asyncio.Event()
 CONFIG_PATH = "blink_config.json"
 RUTA_ETIQUETAS = "etiquetas_videos.json"
 modo_home = "auto"
-modo_arm = "true"
-armado_actual = "true"
+modo_arm = "auto"
+armado_actual = None
 blink = None
-CHECK_INTERVAL = 60
+CHECK_INTERVAL = 30
 ULTIMOS_CLIPS = {}
 videos_ultimas_24h = []
 tarea_vigilancia = None
@@ -235,19 +235,11 @@ async def comando_arm_bool(activar: bool, chat_id):
 
 async def comando_arm(texto, chat_id):
     global modo_arm, tarea_principal
-    from bot import loop_principal
     partes = texto.split()
     if len(partes) == 2 and partes[1] in ["auto", "true", "false"]:
         nuevo_valor = partes[1]
         if modo_arm != nuevo_valor:
             modo_arm = nuevo_valor
-            if tarea_principal and not tarea_principal.done():
-                tarea_principal.cancel()
-                try:
-                    await tarea_principal
-                except asyncio.CancelledError:
-                    print("♻️ loop_principal reiniciado por /arm")
-            tarea_principal = asyncio.create_task(loop_principal(chat_id))
         else:
             telegram_enviar(f"🔒 Modo /arm ya estaba en *{modo_arm}*", chat_id)
     elif len(partes) == 1:
@@ -257,20 +249,12 @@ async def comando_arm(texto, chat_id):
 
 async def comando_home(texto, chat_id):
     global modo_home, tarea_principal
-    from bot import loop_principal
     partes = texto.split()
     if len(partes) == 2 and partes[1] in ["auto", "true", "false"]:
         nuevo_valor = partes[1]
         if modo_home != nuevo_valor:
             modo_home = nuevo_valor
             telegram_enviar(f"🏠 Modo HOME actualizado a *{modo_home}*", chat_id)
-            if tarea_principal and not tarea_principal.done():
-                tarea_principal.cancel()
-                try:
-                    await tarea_principal
-                except asyncio.CancelledError:
-                    print("♻️ loop_principal reiniciado por /home")
-            tarea_principal = asyncio.create_task(loop_principal(chat_id))
         else:
             telegram_enviar(f"🏠 Modo HOME ya estaba en *{modo_home}*", chat_id)
     elif len(partes) == 1:
@@ -725,6 +709,8 @@ async def cerrar_sesion():
 
 async def conectar_blink():
     global blink
+    if blink and blink.available:
+        return
     blink = Blink()
     sesion_restaurada = False
     try:
