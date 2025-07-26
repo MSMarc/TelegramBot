@@ -358,7 +358,7 @@ async def comando_last(chat_id):
                 texto_mensaje = f"🎥 Último vídeo de *{camara_nombre}*\nFecha: {fecha_formateada}\nHora: {hora_formateada}"
             else:
                 texto_mensaje = f"🎥 Último vídeo de {nombre}"
-            telegram_enviar_video(chat_id, filename, texto_mensaje)
+            await telegram_enviar_video(chat_id, filename, texto_mensaje)
             contador_videos += 1
     if not any_video:
         telegram_enviar("⚠️ No hay vídeos recientes disponibles en las cámaras.", chat_id)
@@ -417,7 +417,7 @@ async def comando_video(chat_id, numero):
     if not os.path.exists(ruta_video):
         telegram_enviar("❌ El video solicitado no está disponible localmente.", chat_id)
         return
-    telegram_enviar_video(chat_id, ruta_video, f"🎥 Video {numero}: {video['nombre']} ({video['fecha']})")
+    await telegram_enviar_video(chat_id, ruta_video, f"🎥 Video {numero}: {video['nombre']} ({video['fecha']})")
 
 async def comando_cap(chat_id):
     for nombre, camera in order(blink.cameras).items():
@@ -875,7 +875,7 @@ async def vigilar_movimiento(chat_id):
                     f"Cámara: *{nombre}*\n"
                     f"Fecha: {fecha_str}\n"
                 )
-                telegram_enviar_video(chat_id, filename, caption)
+                await telegram_enviar_video(chat_id, filename, caption)
                 contador_videos += 1
             await asyncio.sleep(refresco)
         except Exception as e:
