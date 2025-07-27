@@ -13,7 +13,6 @@ import aiohttp
 import aiofiles
 from datetime import time
 from collections import OrderedDict
-from telegram import Bot
 import subprocess
 
 load_dotenv()
@@ -105,7 +104,7 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
         telegram_enviar("🏁 Bot iniciado. Usa /help para ver comandos.", chat_id)
     elif texto == "/help":
         ayuda = (
-            "⚙️ *Comandos disponibles:*\n\n"
+            "⚙️ *Comandos disponibles para usuarios:*\n\n"
             "▶️ /start – Inicia el bot\n"
             "❓ /help – Muestra esta ayuda\n"
             "🔄 /refresh – Refresca las cámaras\n"
@@ -120,15 +119,10 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
             "🎬 /video <nº> – Envía vídeo concreto\n"
             "📸 /cap – Foto actual de todas las cámaras\n"
             "📹 /rec – Video actual de una cámara\n"
-            "💎 /authorize – Autoriza a otro usuario\n"
             "⏰ /nocturno – Permite cambiar el horario nocturno\n"
             "🚪 /abrir – Abre la puerta principal de casa\n"
-            "🛑 /stop – Apaga el bot\n"
         )
         telegram_enviar(ayuda, chat_id)
-    elif texto == "/test":
-        # Poner aquí el test que se necesite hacer
-        telegram_enviar("📄 Test hecho, revisa logs")
     elif texto == "/refresh":
         await blink.refresh()
     elif texto == "/list":
@@ -153,21 +147,13 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
     elif texto == "/cap":
         await comando_cap(chat_id)
     elif texto.startswith("/rec"):
-        comando_rec(texto, chat_id)
-    elif texto.startswith("/authorize"):
-        await comando_authorize(texto, chat_id, user_id, Bot(TELEGRAM_TOKEN))
+        await comando_rec(texto, chat_id)
     elif texto.startswith("/nocturno"):
         await comando_nocturno(texto, chat_id)
     elif texto == "/stop":
         comando_stop(user_id, chat_id)
-    elif texto == "/status":
-        await comando_status(chat_id)
     elif texto.startswith("/") and texto[1:].split()[0].isdigit():
         comando_video_n(texto, chat_id)
-    elif texto == "/test":
-        if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
-            telegram_enviar("⛔ Solo el administrador puede usar /test", chat_id)
-            return
     elif texto == "/abrir":
         requests.post("http://localhost:8123/api/webhook/obrir-porta-principal")
     elif texto.startswith("/say "):
@@ -182,7 +168,7 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
         modo = modo_terminal_por_chat.get(chat_id, False)
         if not modo:
             modo_terminal_por_chat[chat_id] = True
-            telegram_enviar("🖥️ Terminal activada. Escribe comandos o usa /terminal otra vez para salir.", chat_id)
+            telegram_enviar("🖥️ Terminal activada. Modo simple, un comando por terminal.", chat_id)
             if chat_id in temporizadores_terminal:
                 temporizadores_terminal[chat_id].cancel()
             tarea = asyncio.create_task(cerrar_terminal_por_inactividad(chat_id))
@@ -457,6 +443,7 @@ async def comando_video(chat_id, numero):
     await telegram_enviar_video(chat_id, ruta_video, f"🎥 Video {numero}: {video['nombre']} ({video['fecha']})")
 
 async def comando_cap(chat_id):
+    await blink.refresh()
     for nombre, camera in order(blink.cameras).items():
         try:
             response = await camera.snap_picture()
@@ -475,7 +462,8 @@ async def comando_cap(chat_id):
         except Exception as e:
             telegram_enviar(f"❌ Error tomando foto en {nombre}: {e}", chat_id)
 
-def comando_rec(texto, chat_id):
+async def comando_rec(texto, chat_id):
+    await blink.refresh()
     if texto.strip() == "/rec":
         mensaje = "📹 Cámaras disponibles:\n"
         for i, nombre in enumerate(ORDEN_CAMARAS, start=1):
@@ -514,33 +502,6 @@ def comando_rec(texto, chat_id):
                 else:
                     telegram_enviar("❌ Número fuera de rango.", chat_id)
 
-async def comando_authorize(texto, chat_id, user_id, bot):
-    global USUARIOS_AUTORIZADOS
-    if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
-        telegram_enviar("⛔ Solo el administrador puede usar /authorize", chat_id)
-        return
-    telegram_enviar("⚙️ Comando en desarrollo...")
-    # partes = texto.split()
-    # if len(partes) != 2:
-    #     telegram_enviar("❌ Uso correcto: /authorize @username", chat_id)
-    #     return
-    # username = partes[1].lstrip("@")
-    # try:
-    #     chat_info = await bot.get_chat(f"@{username}")
-    #     nuevo_user_id = str(chat_info.id)
-    # except Exception as e:
-    #     if "Chat not found" in str(e):
-    #         telegram_enviar(f"⚠️ @{username} debe enviarme antes un mensaje @MarcMS\\_Bot", chat_id)
-    #     else:
-    #         telegram_enviar(f"❌ No se pudo obtener el user_id de {username}: {e}", chat_id)
-    #     return
-    # if nuevo_user_id in USUARIOS_AUTORIZADOS:
-    #     telegram_enviar("⚠️ Usuario ya autorizado.", chat_id)
-    #     return
-    # USUARIOS_AUTORIZADOS.append(nuevo_user_id)
-    # actualizar_env()
-    # telegram_enviar(f"✅ Usuario {username} autorizado correctamente.", chat_id)
-
 async def comando_nocturno(texto, chat_id):
     global HORA_ARMADO_INICIO, HORA_ARMADO_FIN
     args = texto.split()[1:]
@@ -572,19 +533,6 @@ def comando_stop(user_id, chat_id):
     for task in asyncio.all_tasks():
         if task is not asyncio.current_task():
             task.cancel()
-
-async def comando_status(chat_id):
-    estados_actuales = {}
-    for ip, nombre in zip(IP_DISPOSITIVOS, NOMBRES_DISPOSITIVOS):
-        conectado = await async_ping(ip.strip())
-        estados_actuales[nombre.strip()] = conectado
-    ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    lineas = [f"*Dispositivos a las* `{ahora}`"]
-    for nombre in NOMBRES_DISPOSITIVOS:
-        tick = "✅" if estados_actuales.get(nombre.strip(), False) else "❌"
-        lineas.append(f"{tick} {nombre.strip()}")
-    texto = "\n".join(lineas)
-    telegram_enviar(texto, chat_id)
 
 def comando_video_n(texto, chat_id):
     partes = texto[1:].split(maxsplit=1)
@@ -930,6 +878,7 @@ async def vigilar_movimiento(chat_id):
 
 async def captura_cada_hora():
     os.makedirs("fotos", exist_ok=True)
+    await blink.refresh()
     while not APAGAR_BOT.is_set():
         ahora = datetime.now()
         siguiente_hora = (ahora + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
