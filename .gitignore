@@ -7,4 +7,5 @@ fotos/
 venv/
 __pycache__/
 auto_push.sh
+auto_pull.sh
 .env_git
