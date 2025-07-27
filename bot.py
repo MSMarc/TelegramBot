@@ -96,6 +96,11 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
         telegram_enviar("❌ Acceso denegado. Contacta con el administrador para usarme.", chat_id)
         print("Detectado uso no autorizado")
         return
+    if texto.startswith("/say "):
+        if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
+            telegram_enviar("⛔ Solo el administrador puede usar /say", chat_id)
+            return
+        telegram_enviar(texto.replace("/say ",""), TELEGRAM_CHAT_ID)
     texto = texto.strip().lower()
     texto = texto.replace("@marcms_bot", "")
     if not texto.startswith("/"):
@@ -156,11 +161,6 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
         comando_video_n(texto, chat_id)
     elif texto == "/abrir":
         requests.post("http://localhost:8123/api/webhook/obrir-porta-principal")
-    elif texto.startswith("/say "):
-        if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
-            telegram_enviar("⛔ Solo el administrador puede usar /say", chat_id)
-            return
-        telegram_enviar(texto.replace("/say ",""), TELEGRAM_CHAT_ID)
     elif texto == "/terminal":
         if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
             telegram_enviar("⛔ Solo el administrador puede usar /terminal", chat_id)
@@ -180,26 +180,18 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
 
 async def manejar_terminal(texto, chat_id):
     texto = texto.strip()
-    print(f"[DEBUG] manejar_terminal recibido: '{texto}' en chat {chat_id}")
-    print(f"[DEBUG] Estado actual modo_terminal_por_chat: {modo_terminal_por_chat}")
-    
+    texto = texto.replace("@MarcMS_Bot", "")    
     if texto.lower() == "/terminal":
         modo_terminal_por_chat[chat_id] = False
         if chat_id in temporizadores_terminal:
             temporizadores_terminal[chat_id].cancel()
             del temporizadores_terminal[chat_id]
         telegram_enviar("🚪 Terminal cerrada por el usuario.", chat_id)
-        print(f"[DEBUG] Terminal cerrada en chat {chat_id}")
-        print(f"[DEBUG] Estado modo_terminal_por_chat tras cerrar: {modo_terminal_por_chat}")
         return
-    
     if chat_id in temporizadores_terminal:
         temporizadores_terminal[chat_id].cancel()
-        print(f"[DEBUG] Cancelado temporizador previo para chat {chat_id}")
     tarea = asyncio.create_task(cerrar_terminal_por_inactividad(chat_id))
-    temporizadores_terminal[chat_id] = tarea
-    print(f"[DEBUG] Nuevo temporizador iniciado para chat {chat_id}")
-    
+    temporizadores_terminal[chat_id] = tarea    
     try:
         resultado = subprocess.run(texto, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10)
         salida = resultado.stdout.strip() or resultado.stderr.strip() or "✅ Comando ejecutado (sin salida)"
