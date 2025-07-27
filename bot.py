@@ -180,17 +180,26 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
 
 async def manejar_terminal(texto, chat_id):
     texto = texto.strip()
+    print(f"[DEBUG] manejar_terminal recibido: '{texto}' en chat {chat_id}")
+    print(f"[DEBUG] Estado actual modo_terminal_por_chat: {modo_terminal_por_chat}")
+    
     if texto.lower() == "/terminal":
         modo_terminal_por_chat[chat_id] = False
         if chat_id in temporizadores_terminal:
             temporizadores_terminal[chat_id].cancel()
             del temporizadores_terminal[chat_id]
         telegram_enviar("🚪 Terminal cerrada por el usuario.", chat_id)
+        print(f"[DEBUG] Terminal cerrada en chat {chat_id}")
+        print(f"[DEBUG] Estado modo_terminal_por_chat tras cerrar: {modo_terminal_por_chat}")
         return
+    
     if chat_id in temporizadores_terminal:
         temporizadores_terminal[chat_id].cancel()
+        print(f"[DEBUG] Cancelado temporizador previo para chat {chat_id}")
     tarea = asyncio.create_task(cerrar_terminal_por_inactividad(chat_id))
     temporizadores_terminal[chat_id] = tarea
+    print(f"[DEBUG] Nuevo temporizador iniciado para chat {chat_id}")
+    
     try:
         resultado = subprocess.run(texto, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10)
         salida = resultado.stdout.strip() or resultado.stderr.strip() or "✅ Comando ejecutado (sin salida)"
