@@ -101,6 +101,7 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
             telegram_enviar("⛔ Solo el administrador puede usar /say", chat_id)
             return
         telegram_enviar(texto.replace("/say ",""), TELEGRAM_CHAT_ID)
+        return
     texto = texto.strip().lower()
     texto = texto.replace("@marcms_bot", "")
     if not texto.startswith("/"):
