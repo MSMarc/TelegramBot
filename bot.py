@@ -14,6 +14,7 @@ import aiofiles
 from datetime import time
 from collections import OrderedDict
 from telegram import Bot
+import subprocess
 
 load_dotenv()
 
@@ -43,6 +44,8 @@ tarea_principal = None
 session = None
 presencia_anterior = None
 dentro_horario_anterior = False
+modo_terminal_por_chat = {}
+temporizadores_terminal = {}
 
 #Cargar datos
 
@@ -89,6 +92,7 @@ contador_videos = max(cargar_max_id(), cargar_max_id_videos()) + 1
 #Gestionar comandos
 
 async def manejar_comando(texto, message_id, chat_id, user_id):
+    global USUARIOS_AUTORIZADOS
     if str(user_id) not in USUARIOS_AUTORIZADOS:
         telegram_enviar("❌ Acceso denegado. Contacta con el administrador para usarme.", chat_id)
         print("Detectado uso no autorizado")
@@ -161,13 +165,60 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
     elif texto.startswith("/") and texto[1:].split()[0].isdigit():
         comando_video_n(texto, chat_id)
     elif texto == "/test":
-        telegram_enviar("❌ Comando eliminado por el admin.", chat_id)
+        if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
+            telegram_enviar("⛔ Solo el administrador puede usar /test", chat_id)
+            return
     elif texto == "/abrir":
         requests.post("http://localhost:8123/api/webhook/obrir-porta-principal")
-    elif texto.startwith("/say"):
+    elif texto.startswith("/say "):
+        if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
+            telegram_enviar("⛔ Solo el administrador puede usar /say", chat_id)
+            return
         telegram_enviar(texto.replace("/say ",""), -1002644873362)
+    elif texto == "/terminal":
+        if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
+            telegram_enviar("⛔ Solo el administrador puede usar /terminal", chat_id)
+            return
+        modo = modo_terminal_por_chat.get(chat_id, False)
+        if not modo:
+            modo_terminal_por_chat[chat_id] = True
+            telegram_enviar("🖥️ Terminal activada. Escribe comandos o usa /terminal otra vez para salir.", chat_id)
+            if chat_id in temporizadores_terminal:
+                temporizadores_terminal[chat_id].cancel()
+            tarea = asyncio.create_task(cerrar_terminal_por_inactividad(chat_id))
+            temporizadores_terminal[chat_id] = tarea
+        else:
+            telegram_enviar("❌ Ya estás en modo terminal. Usa /terminal otra vez para salir.", chat_id)
     else:
         telegram_enviar("❌ Comando no soportado", chat_id)
+
+async def manejar_terminal(texto, chat_id):
+    texto = texto.strip()
+    if texto.lower() == "/terminal":
+        modo_terminal_por_chat[chat_id] = False
+        if chat_id in temporizadores_terminal:
+            temporizadores_terminal[chat_id].cancel()
+            del temporizadores_terminal[chat_id]
+        telegram_enviar("🚪 Terminal cerrada por el usuario.", chat_id)
+        return
+    if chat_id in temporizadores_terminal:
+        temporizadores_terminal[chat_id].cancel()
+    tarea = asyncio.create_task(cerrar_terminal_por_inactividad(chat_id))
+    temporizadores_terminal[chat_id] = tarea
+    try:
+        resultado = subprocess.run(texto, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10)
+        salida = resultado.stdout.strip() or resultado.stderr.strip() or "✅ Comando ejecutado (sin salida)"
+        if len(salida) > 4000:
+            salida = salida[:3990] + "\n... (salida recortada)"
+        telegram_enviar(f"```\n{salida}\n```", chat_id, parse_mode="Markdown")
+    except Exception as e:
+        telegram_enviar(f"❌ Error ejecutando el comando: {e}", chat_id)
+
+async def cerrar_terminal_por_inactividad(chat_id):
+    await asyncio.sleep(300)
+    if modo_terminal_por_chat.get(chat_id):
+        modo_terminal_por_chat[chat_id] = False
+        telegram_enviar("⏳ Terminal cerrada automáticamente por inactividad (5 min).", chat_id)
 
 async def comando_list(chat_id):
     dispositivos = []
@@ -466,9 +517,9 @@ def comando_rec(texto, chat_id):
 async def comando_authorize(texto, chat_id, user_id, bot):
     global USUARIOS_AUTORIZADOS
     if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
-        telegram_enviar("❌ Solo el administrador del bot puede usar /authorize", chat_id)
+        telegram_enviar("⛔ Solo el administrador puede usar /authorize", chat_id)
         return
-    telegram_enviar("⚙️ Comando en desarrollo")
+    telegram_enviar("⚙️ Comando en desarrollo...")
     # partes = texto.split()
     # if len(partes) != 2:
     #     telegram_enviar("❌ Uso correcto: /authorize @username", chat_id)
@@ -514,7 +565,7 @@ async def comando_nocturno(texto, chat_id):
 
 def comando_stop(user_id, chat_id):
     if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
-        telegram_enviar("❌ Solo el administrador del bot puede usar /stop", chat_id)
+        telegram_enviar("⛔ Solo el administrador puede usar /stop", chat_id)
         return
     telegram_enviar("🛑 Bot apagado.", chat_id)
     APAGAR_BOT.set()
@@ -598,7 +649,10 @@ async def telegram_recibir():
                     mid = mensaje.get("message_id")
                     chat_id = mensaje.get("chat", {}).get("id")
                     user_id = mensaje.get("from", {}).get("id")
-                    await manejar_comando(texto, mid, chat_id, user_id)
+                    if modo_terminal_por_chat.get(chat_id, False):
+                        await manejar_terminal(texto, chat_id)
+                    else:
+                        await manejar_comando(texto, mid, chat_id, user_id)
         except requests.exceptions.RequestException as e:
             print("🛜 Posible perdida de conexión a internet:", e)
             await asyncio.sleep(10)
