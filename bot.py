@@ -174,7 +174,7 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
         if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
             telegram_enviar("⛔ Solo el administrador puede usar /say", chat_id)
             return
-        telegram_enviar(texto.replace("/say ",""), -1002644873362)
+        telegram_enviar(texto.replace("/say ",""), TELEGRAM_CHAT_ID)
     elif texto == "/terminal":
         if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
             telegram_enviar("⛔ Solo el administrador puede usar /terminal", chat_id)
@@ -210,7 +210,7 @@ async def manejar_terminal(texto, chat_id):
         salida = resultado.stdout.strip() or resultado.stderr.strip() or "✅ Comando ejecutado (sin salida)"
         if len(salida) > 4000:
             salida = salida[:3990] + "\n... (salida recortada)"
-        telegram_enviar(f"```\n{salida}\n```", chat_id, parse_mode="Markdown")
+        telegram_enviar(f"```\n{salida}\n```", chat_id)
     except Exception as e:
         telegram_enviar(f"❌ Error ejecutando el comando: {e}", chat_id)
 
@@ -864,22 +864,26 @@ async def loop_principal(chat_id):
             await asyncio.sleep(10)
     print("end loop_principal")
 
-async def detectar_presencia(chat_id=None):
+async def detectar_presencia(chat_id=TELEGRAM_CHAT_ID):
     global presencia_anterior
+    async def hay_dispositivos_presentes():
+        for ip in IP_DISPOSITIVOS:
+            if await async_ping(ip.strip()):
+                return True
+        return False
     try:
         router_ok = await async_ping(IP_ROUTER)
         if not router_ok:
             return None
-        presencia_actual = False
-        for ip in IP_DISPOSITIVOS:
-            if await async_ping(ip.strip()):
-                presencia_actual = True
-                break
+        presencia_actual = await hay_dispositivos_presentes()
+        if not presencia_actual:
+            await asyncio.sleep(15)
+            presencia_actual = await hay_dispositivos_presentes()
         if chat_id is not None and presencia_anterior is not None:
-            if presencia_anterior == True and presencia_actual == False:
-                telegram_enviar(f"🏠 /home auto ha detectado casa vacía.", chat_id)
-            elif presencia_anterior == False and presencia_actual == True:
-                telegram_enviar(f"🏠 /home auto ha detectado alguien en casa.", chat_id)
+            if presencia_anterior and not presencia_actual:
+                await telegram_enviar("🏠 Home auto ha detectado casa vacía.", chat_id)
+            elif not presencia_anterior and presencia_actual:
+                await telegram_enviar("🏠 Home auto ha detectado alguien en casa.", chat_id)
         presencia_anterior = presencia_actual
         return presencia_actual
     except Exception as e:
