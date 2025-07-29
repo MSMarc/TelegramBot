@@ -161,7 +161,10 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
     elif texto.startswith("/") and texto[1:].split()[0].isdigit():
         comando_video_n(texto, chat_id)
     elif texto == "/abrir":
+        tarea_vigilancia = asyncio.create_task(vigilar_movimiento(chat_id))
         requests.post("http://localhost:8123/api/webhook/obrir-porta-principal")
+        await asyncio.sleep(120)
+        tarea_vigilancia.cancel()
     elif texto == "/terminal":
         if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
             telegram_enviar("⛔ Solo el administrador puede usar /terminal", chat_id)
@@ -482,7 +485,10 @@ async def comando_rec(texto, chat_id):
                 for nombre in ORDEN_CAMARAS:
                     nombre_webhook = nombre.lower().replace(" ", "_")
                     try:
+                        tarea_vigilancia = asyncio.create_task(vigilar_movimiento(chat_id))
                         requests.post(f"http://localhost:8123/api/webhook/grabar_{nombre_webhook}")
+                        await asyncio.sleep(120)
+                        tarea_vigilancia.cancel()
                     except Exception as e:
                         errores.append(f"{nombre}: {e}")
                 if errores:
@@ -498,7 +504,9 @@ async def comando_rec(texto, chat_id):
                     nombre_webhook = nombre.lower().replace(" ", "_")
                     try:
                         telegram_enviar(f"▶️ Grabando desde {nombre}... Se enviará al finalizar", chat_id)
+                        tarea_vigilancia = asyncio.create_task(vigilar_movimiento(chat_id))
                         requests.post(f"http://localhost:8123/api/webhook/grabar_{nombre_webhook}")
+                        tarea_vigilancia.cancel()
                     except Exception as e:
                         telegram_enviar(f"❌ Error al lanzar webhook: {e}", chat_id)
                 else:
@@ -841,42 +849,46 @@ async def detectar_presencia(chat_id=TELEGRAM_CHAT_ID):
 
 async def vigilar_movimiento(chat_id):
     global ULTIMOS_CLIPS, videos_ultimas_24h, contador_videos
-    refresco=30
-    while not APAGAR_BOT.is_set():
-        try:
-            await blink.refresh()
-            for nombre, cam in order(blink.cameras).items():
-                video_bytes = cam.video_from_cache
-                if not video_bytes:
-                    continue
-                nuevo_hash = hash(video_bytes)
-                if ULTIMOS_CLIPS.get(nombre) == nuevo_hash:
-                    continue
-                ULTIMOS_CLIPS[nombre] = nuevo_hash
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                fecha_str = datetime.strptime(timestamp, "%Y%m%d_%H%M%S").strftime("%H:%M:%S del %d-%m-%y")
-                filename = f"videos/{contador_videos}_{nombre}_{timestamp}.mp4"
-                os.makedirs("videos", exist_ok=True)
-                async with aiofiles.open(filename, "wb") as f:
-                    await f.write(video_bytes)
-                video_info = {
-                    "id": contador_videos,
-                    "ruta": filename,
-                    "nombre": nombre,
-                    "fecha": fecha_str,
-                }
-                videos_ultimas_24h.append(video_info)
-                caption = (
-                    f"🎥 *Vídeo {contador_videos}*\n"
-                    f"Cámara: *{nombre}*\n"
-                    f"Fecha: {fecha_str}\n"
-                )
-                await telegram_enviar_video(chat_id, filename, caption)
-                contador_videos += 1
-            await asyncio.sleep(refresco)
-        except Exception as e:
-            print("❌ Error en vigilancia de movimiento:", e)
-            await asyncio.sleep(refresco)
+    refresco = 30
+    try:
+        while not APAGAR_BOT.is_set():
+            try:
+                await blink.refresh()
+                for nombre, cam in order(blink.cameras).items():
+                    video_bytes = cam.video_from_cache
+                    if not video_bytes:
+                        continue
+                    nuevo_hash = hash(video_bytes)
+                    if ULTIMOS_CLIPS.get(nombre) == nuevo_hash:
+                        continue
+                    ULTIMOS_CLIPS[nombre] = nuevo_hash
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    fecha_str = datetime.strptime(timestamp, "%Y%m%d_%H%M%S").strftime("%H:%M:%S del %d-%m-%y")
+                    filename = f"videos/{contador_videos}_{nombre}_{timestamp}.mp4"
+                    os.makedirs("videos", exist_ok=True)
+                    async with aiofiles.open(filename, "wb") as f:
+                        await f.write(video_bytes)
+                    video_info = {
+                        "id": contador_videos,
+                        "ruta": filename,
+                        "nombre": nombre,
+                        "fecha": fecha_str,
+                    }
+                    videos_ultimas_24h.append(video_info)
+                    caption = (
+                        f"🎥 *Vídeo {contador_videos}*\n"
+                        f"Cámara: *{nombre}*\n"
+                        f"Fecha: {fecha_str}\n"
+                    )
+                    await telegram_enviar_video(chat_id, filename, caption)
+                    contador_videos += 1
+                await asyncio.sleep(refresco)
+            except Exception as e:
+                print("❌ Error en vigilancia de movimiento:", e)
+                await asyncio.sleep(refresco)
+    except asyncio.CancelledError:
+        print("🛑 Vigilancia cancelada.")
+        raise
 
 async def captura_cada_hora():
     os.makedirs("fotos", exist_ok=True)
