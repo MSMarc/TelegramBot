@@ -91,7 +91,7 @@ contador_videos = max(cargar_max_id(), cargar_max_id_videos()) + 1
 #Gestionar comandos
 
 async def manejar_comando(texto, message_id, chat_id, user_id):
-    global USUARIOS_AUTORIZADOS
+    global USUARIOS_AUTORIZADOS, tarea_vigilancia
     if str(user_id) not in USUARIOS_AUTORIZADOS:
         telegram_enviar("❌ Acceso denegado. Contacta con el administrador para usarme.", chat_id)
         print("Detectado uso no autorizado")
@@ -161,10 +161,13 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
     elif texto.startswith("/") and texto[1:].split()[0].isdigit():
         comando_video_n(texto, chat_id)
     elif texto == "/abrir":
-        tarea_vigilancia = asyncio.create_task(vigilar_movimiento(chat_id))
+        if tarea_vigilancia is None or tarea_vigilancia.done():
+            tarea_vigilancia = asyncio.create_task(vigilar_movimiento(chat_id, 15))
         requests.post("http://localhost:8123/api/webhook/obrir-porta-principal")
         await asyncio.sleep(120)
-        tarea_vigilancia.cancel()
+        if tarea_vigilancia and not tarea_vigilancia.done():
+            tarea_vigilancia.cancel()
+            tarea_vigilancia = None
     elif texto == "/terminal":
         if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
             telegram_enviar("⛔ Solo el administrador puede usar /terminal", chat_id)
@@ -270,7 +273,7 @@ async def comando_arm_bool(activar: bool, chat_id):
     if activar:
         await activar_blink(chat_id)
         if tarea_vigilancia is None or tarea_vigilancia.done():
-            tarea_vigilancia = asyncio.create_task(vigilar_movimiento(chat_id))
+            tarea_vigilancia = asyncio.create_task(vigilar_movimiento(chat_id, 30))
     else:
         await desactivar_blink(chat_id)
         if tarea_vigilancia and not tarea_vigilancia.done():
@@ -468,6 +471,7 @@ async def comando_cap(chat_id):
             telegram_enviar(f"❌ Error tomando foto en {nombre}: {e}", chat_id)
 
 async def comando_rec(texto, chat_id):
+    global tarea_vigilancia
     await blink.refresh()
     if texto.strip() == "/rec":
         mensaje = "📹 Cámaras disponibles:\n"
@@ -485,10 +489,13 @@ async def comando_rec(texto, chat_id):
                 for nombre in ORDEN_CAMARAS:
                     nombre_webhook = nombre.lower().replace(" ", "_")
                     try:
-                        tarea_vigilancia = asyncio.create_task(vigilar_movimiento(chat_id))
+                        if tarea_vigilancia is None or tarea_vigilancia.done():
+                            tarea_vigilancia = asyncio.create_task(vigilar_movimiento(chat_id, 15))
                         requests.post(f"http://localhost:8123/api/webhook/grabar_{nombre_webhook}")
                         await asyncio.sleep(120)
-                        tarea_vigilancia.cancel()
+                        if tarea_vigilancia and not tarea_vigilancia.done():
+                            tarea_vigilancia.cancel()
+                            tarea_vigilancia = None
                     except Exception as e:
                         errores.append(f"{nombre}: {e}")
                 if errores:
@@ -504,9 +511,13 @@ async def comando_rec(texto, chat_id):
                     nombre_webhook = nombre.lower().replace(" ", "_")
                     try:
                         telegram_enviar(f"▶️ Grabando desde {nombre}... Se enviará al finalizar", chat_id)
-                        tarea_vigilancia = asyncio.create_task(vigilar_movimiento(chat_id))
+                        if tarea_vigilancia is None or tarea_vigilancia.done():
+                            tarea_vigilancia = asyncio.create_task(vigilar_movimiento(chat_id, 15))
                         requests.post(f"http://localhost:8123/api/webhook/grabar_{nombre_webhook}")
-                        tarea_vigilancia.cancel()
+                        await asyncio.sleep(120)
+                        if tarea_vigilancia and not tarea_vigilancia.done():
+                            tarea_vigilancia.cancel()
+                            tarea_vigilancia = None
                     except Exception as e:
                         telegram_enviar(f"❌ Error al lanzar webhook: {e}", chat_id)
                 else:
@@ -847,9 +858,8 @@ async def detectar_presencia(chat_id=TELEGRAM_CHAT_ID):
     except Exception as e:
         print(f"❌ Error en detectar_presencia: {e}")
 
-async def vigilar_movimiento(chat_id):
+async def vigilar_movimiento(chat_id, refresco):
     global ULTIMOS_CLIPS, videos_ultimas_24h, contador_videos
-    refresco = 30
     try:
         while not APAGAR_BOT.is_set():
             try:
