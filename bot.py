@@ -876,7 +876,12 @@ async def vigilar_movimiento(chat_id, refresco):
                     contador_videos += 1
                 await asyncio.sleep(refresco)
             except Exception as e:
-                print("❌ Error en vigilancia de movimiento:", e)
+                msg = str(e)
+                if "System is busy, please wait" in msg or ("code': 307" in msg):
+                    print("⚠️ Blink ocupado, esperando antes de seguir...")
+                    await asyncio.sleep(5)
+                else:
+                    print("❌ Error en vigilancia de movimiento:", e)
                 await asyncio.sleep(refresco)
     except asyncio.CancelledError:
         print("🛑 Vigilancia cancelada.")
