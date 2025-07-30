@@ -910,11 +910,27 @@ async def captura_cada_hora():
 #Utilidades
 
 async def async_ping(ip):
-    system = platform.system().lower()
-    command = ["ping", "-n", "1", "-w", "1000", ip] if "windows" in system else ["ping", "-c", "1", "-W", "1", ip]
-    proc = await asyncio.create_subprocess_exec(*command, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
-    await proc.communicate()
-    return proc.returncode == 0
+    try:
+        print(f"📡 Haciendo ping a: {ip} (tipo: {type(ip)})")
+        ip = str(ip).strip()
+        system = platform.system().lower()
+        command = ["ping", "-n", "1", "-w", "1000", ip] if "windows" in system else ["ping", "-c", "1", "-W", "1", ip]
+        print(f"🔧 Comando generado: {' '.join(command)}")
+
+        proc = await asyncio.create_subprocess_exec(
+            *command,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL
+        )
+        await proc.communicate()
+
+        print(f"✅ Ping a {ip} {'OK' if proc.returncode == 0 else 'FALLÓ'} (returncode: {proc.returncode})")
+        return proc.returncode == 0
+
+    except Exception as e:
+        print(f"❌ Error en async_ping con ip={ip} → {e}")
+        return False
+
 
 def obtener_mac(ip):
     sistema = platform.system().lower()
