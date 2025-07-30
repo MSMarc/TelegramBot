@@ -7,6 +7,6 @@ fotos/
 venv/
 __pycache__/
 start_bot.sh
-auto_push.sh
-auto_pull.sh
+push.sh
+pull.sh
 .env_git
