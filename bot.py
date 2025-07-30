@@ -481,8 +481,8 @@ async def comando_rec(texto, chat_id):
                     nombre_webhook = nombre.lower().replace(" ", "_")
                     try:
                         requests.post(f"http://localhost:8123/api/webhook/grabar_{nombre_webhook}")
-                        await asyncio.sleep(30)
-                        CHECK_INTERVAL=10
+                        await asyncio.sleep(35)
+                        CHECK_INTERVAL=15
                         await asyncio.sleep(60)
                         CHECK_INTERVAL=CHECK_INTERVAL_valor
                     except Exception as e:
@@ -501,12 +501,10 @@ async def comando_rec(texto, chat_id):
                     try:
                         telegram_enviar(f"▶️ Grabando desde {nombre}... Se enviará al finalizar", chat_id)
                         requests.post(f"http://localhost:8123/api/webhook/grabar_{nombre_webhook}")
-                        await asyncio.sleep(30)
-                        CHECK_INTERVAL=10
-                        print("Actualizando rápido")
+                        await asyncio.sleep(35)
+                        CHECK_INTERVAL=15
                         await asyncio.sleep(60)
                         CHECK_INTERVAL=CHECK_INTERVAL_valor
-                        print("Actualizando normal")
                     except Exception as e:
                         telegram_enviar(f"❌ Error al lanzar webhook: {e}", chat_id)
                 else:
