@@ -278,7 +278,11 @@ async def comando_arm(texto, chat_id):
         else:
             telegram_enviar(f"🔒 Modo /arm ya estaba en *{modo_arm}*", chat_id)
     elif len(partes) == 1:
-        telegram_enviar(f"🔒 Estado actual /arm *{modo_arm}*", chat_id)
+        
+        if modo_arm=="auto":
+            telegram_enviar(f"🔒 Estado actual /arm auto. Decisión: *{blink.sync[BLINK_MODULE].arm}*", chat_id)
+        else:
+            telegram_enviar(f"🔒 Estado actual /arm *{modo_arm}*", chat_id)
     else:
         telegram_enviar("❌ Uso: /arm true | false | auto", chat_id)
 
@@ -911,26 +915,19 @@ async def captura_cada_hora():
 
 async def async_ping(ip):
     try:
-        print(f"📡 Haciendo ping a: {ip} (tipo: {type(ip)})")
         ip = str(ip).strip()
         system = platform.system().lower()
         command = ["ping", "-n", "1", "-w", "1000", ip] if "windows" in system else ["ping", "-c", "1", "-W", "1", ip]
-        print(f"🔧 Comando generado: {' '.join(command)}")
-
         proc = await asyncio.create_subprocess_exec(
             *command,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL
         )
         await proc.communicate()
-
-        print(f"✅ Ping a {ip} {'OK' if proc.returncode == 0 else 'FALLÓ'} (returncode: {proc.returncode})")
         return proc.returncode == 0
-
     except Exception as e:
         print(f"❌ Error en async_ping con ip={ip} → {e}")
         return False
-
 
 def obtener_mac(ip):
     sistema = platform.system().lower()
