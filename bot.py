@@ -461,38 +461,37 @@ async def comando_rec(texto, chat_id):
         if len(partes) != 2:
             telegram_enviar("❌ Uso incorrecto. Prueba `/rec X` o `/rec all`", chat_id)
         else:
+            nombre_webhook = nombre.lower().replace(" ", "_")
             if partes[1].lower() == "all":
                 errores = []
                 for nombre in ORDEN_CAMARAS:
-                    nombre_webhook = nombre.lower().replace(" ", "_")
                     try:
                         requests.post(f"http://localhost:8123/api/webhook/grabar_{nombre_webhook}")
-                        await asyncio.sleep(35)
-                        CHECK_INTERVAL=15
-                        await asyncio.sleep(60)
-                        CHECK_INTERVAL=CHECK_INTERVAL_valor
                     except Exception as e:
                         errores.append(f"{nombre}: {e}")
                 if errores:
                     telegram_enviar("❌ Algunos errores al lanzar webhooks:\n" + "\n".join(errores), chat_id)
                 else:
                     telegram_enviar("▶️ Grabando desde todas las cámaras... Se enviará al finalizar", chat_id)
+                    await asyncio.sleep(35)
+                    CHECK_INTERVAL = 15
+                    await asyncio.sleep(60)
+                    CHECK_INTERVAL = CHECK_INTERVAL_valor
             elif not partes[1].isdigit():
                 telegram_enviar("❌ Uso incorrecto. Prueba `/rec X` o `/rec all`", chat_id)
             else:
                 indice = int(partes[1]) - 1
                 if 0 <= indice < len(ORDEN_CAMARAS):
                     nombre = ORDEN_CAMARAS[indice]
-                    nombre_webhook = nombre.lower().replace(" ", "_")
                     try:
-                        telegram_enviar(f"▶️ Grabando desde {nombre}... Se enviará al finalizar", chat_id)
                         requests.post(f"http://localhost:8123/api/webhook/grabar_{nombre_webhook}")
+                        telegram_enviar(f"▶️ Grabando desde {nombre}... Se enviará al finalizar", chat_id)
                         await asyncio.sleep(35)
-                        CHECK_INTERVAL=15
+                        CHECK_INTERVAL = 15
                         await asyncio.sleep(60)
-                        CHECK_INTERVAL=CHECK_INTERVAL_valor
+                        CHECK_INTERVAL = CHECK_INTERVAL_valor
                     except Exception as e:
-                        telegram_enviar(f"❌ Error al lanzar webhook: {e}", chat_id)
+                        telegram_enviar(f"❌ Error al lanzar webhook en {nombre}: {e}", chat_id)
                 else:
                     telegram_enviar("❌ Número fuera de rango.", chat_id)
 
