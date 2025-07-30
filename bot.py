@@ -34,7 +34,7 @@ RUTA_ETIQUETAS = "etiquetas_videos.json"
 modo_home = "auto"
 modo_arm = "auto"
 blink = None
-CHECK_INTERVAL = 30
+CHECK_INTERVAL = 20
 ULTIMOS_CLIPS = {}
 videos_ultimas_24h = []
 session = None
@@ -791,7 +791,7 @@ async def loop_principal(chat_id):
                     presencia = await detectar_presencia()
                     if presencia is None:
                         telegram_enviar(f"⚠️ No se detecta el router {IP_ROUTER}", chat_id)
-                        await asyncio.sleep(CHECK_INTERVAL)
+                        await asyncio.sleep(CHECK_INTERVAL*2)
                         continue
                 else:
                     presencia = (modo_home == "true")
@@ -810,7 +810,7 @@ async def loop_principal(chat_id):
             break
         except Exception as e:
             print(f"❌ Error en loop_principal: {e}")
-            await asyncio.sleep(10)
+            await asyncio.sleep(CHECK_INTERVAL/2)
     print("end loop_principal")
 
 async def detectar_presencia(chat_id=TELEGRAM_CHAT_ID):
@@ -840,7 +840,7 @@ async def detectar_presencia(chat_id=TELEGRAM_CHAT_ID):
         print(f"❌ Error en detectar_presencia: {e}")
 
 
-async def vigilar_movimiento(chat_id, refresco):
+async def vigilar_movimiento(chat_id):
     global ULTIMOS_CLIPS, videos_ultimas_24h, contador_videos
     try:
         while not APAGAR_BOT.is_set():
@@ -874,15 +874,10 @@ async def vigilar_movimiento(chat_id, refresco):
                     )
                     await telegram_enviar_video(chat_id, filename, caption)
                     contador_videos += 1
-                await asyncio.sleep(refresco)
+                await asyncio.sleep(CHECK_INTERVAL)
             except Exception as e:
-                msg = str(e)
-                if "System is busy, please wait" in msg or ("code': 307" in msg):
-                    print("⚠️ Blink ocupado, esperando antes de seguir...")
-                    await asyncio.sleep(5)
-                else:
-                    print("❌ Error en vigilancia de movimiento:", e)
-                await asyncio.sleep(refresco)
+                print("❌ Error en vigilancia de movimiento:", e)
+                await asyncio.sleep(CHECK_INTERVAL)
     except asyncio.CancelledError:
         print("🛑 Vigilancia cancelada.")
         raise
@@ -947,7 +942,7 @@ def obtener_mac(ip):
         elif "linux" in sistema or "darwin" in sistema:
             if os.path.exists("/proc/net/arp"):
                 with open("/proc/net/arp") as f:
-                    for line in f.readlines()[1:]:  # saltar encabezado
+                    for line in f.readlines()[1:]:
                         fields = line.split()
                         if fields[0] == ip:
                             return fields[3].upper()
@@ -1000,7 +995,7 @@ async def main():
     except Exception as e:
         print(f"⚠️ No se pudo conectar a Blink al inicio: {e}")
     tarea_principal = asyncio.create_task(loop_principal(TELEGRAM_CHAT_ID))
-    tarea_vigilancia = asyncio.create_task(vigilar_movimiento(TELEGRAM_CHAT_ID, CHECK_INTERVAL))
+    tarea_vigilancia = asyncio.create_task(vigilar_movimiento(TELEGRAM_CHAT_ID))
     tareas = [
         asyncio.create_task(telegram_recibir()),
         asyncio.create_task(captura_cada_hora()),
