@@ -54,18 +54,6 @@ def leer_hora_env(nombre_var, default_hora):
         except Exception:
             print(f"⚠️ Formato inválido para {nombre_var}, usando valor por defecto {default_hora}")
     return default_hora
-
-def cargar_max_id():
-    if not os.path.exists(RUTA_ETIQUETAS):
-        return 0
-    try:
-        with open(RUTA_ETIQUETAS, "r") as f:
-            etiquetas = json.load(f)
-        max_id = max(e["id"] for e in etiquetas) if etiquetas else 0
-        return max_id
-    except Exception as e:
-        print(f"⚠️ Error leyendo etiquetas para max id: {e}")
-        return 0
     
 def cargar_max_id_videos():
     carpeta = "videos"
@@ -83,19 +71,21 @@ def order(cameras):
 
 HORA_ARMADO_INICIO = leer_hora_env("HORA_ARMADO_INICIO", time(0, 30))
 HORA_ARMADO_FIN = leer_hora_env("HORA_ARMADO_FIN", time(8, 0))
-contador_videos = max(cargar_max_id(), cargar_max_id_videos()) + 1
+contador_videos = cargar_max_id_videos()+1
 
 #Gestionar comandos
 
 async def manejar_comando(texto, message_id, chat_id, user_id):
     global USUARIOS_AUTORIZADOS
+    if chat_id in USUARIOS_AUTORIZADOS[1:]:
+        telegram_enviar(f"{NOMBRES_DISPOSITIVOS[USUARIOS_AUTORIZADOS.index(chat_id)]} ha enviado: {texto}", USUARIOS_AUTORIZADOS[1])
     if str(user_id) not in USUARIOS_AUTORIZADOS:
         telegram_enviar("❌ Acceso denegado. Contacta con el administrador para usarme.", chat_id)
         print("Detectado uso no autorizado")
         return
     if texto.startswith("/say "):
         if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
-            telegram_enviar("⛔ Solo el administrador puede usar /say", chat_id)
+            telegram_enviar("❌ Comando no soportado", chat_id)
             return
         telegram_enviar(texto.replace("/say ",""), TELEGRAM_CHAT_ID)
         return
@@ -276,7 +266,6 @@ async def comando_arm(texto, chat_id):
         else:
             telegram_enviar(f"🔒 Modo /arm ya estaba en *{modo_arm}*", chat_id)
     elif len(partes) == 1:
-        
         if modo_arm=="auto":
             telegram_enviar(f"🔒 Estado actual /arm auto. (Auto=*{blink.sync[BLINK_MODULE].arm}*)", chat_id)
         else:
@@ -876,9 +865,8 @@ async def vigilar_movimiento(chat_id):
                     }
                     videos_ultimas_24h.append(video_info)
                     caption = (
-                        f"🎥 *Vídeo {contador_videos}*\n"
-                        f"Cámara: *{nombre}*\n"
-                        f"Fecha: {fecha_str}\n"
+                        f"🎥 Cámara: *{nombre}*\n"
+                        f"📆 Fecha: {fecha_str}\n"
                     )
                     await telegram_enviar_video(chat_id, filename, caption)
                     contador_videos += 1
