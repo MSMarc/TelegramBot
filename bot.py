@@ -33,7 +33,6 @@ CONFIG_PATH = "blink_config.json"
 RUTA_ETIQUETAS = "etiquetas_videos.json"
 modo_home = "auto"
 modo_arm = "auto"
-armado_actual = None
 blink = None
 CHECK_INTERVAL = 30
 ULTIMOS_CLIPS = {}
@@ -91,7 +90,7 @@ contador_videos = max(cargar_max_id(), cargar_max_id_videos()) + 1
 #Gestionar comandos
 
 async def manejar_comando(texto, message_id, chat_id, user_id):
-    global USUARIOS_AUTORIZADOS, tarea_vigilancia
+    global USUARIOS_AUTORIZADOS
     if str(user_id) not in USUARIOS_AUTORIZADOS:
         telegram_enviar("❌ Acceso denegado. Contacta con el administrador para usarme.", chat_id)
         print("Detectado uso no autorizado")
@@ -161,13 +160,7 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
     elif texto.startswith("/") and texto[1:].split()[0].isdigit():
         comando_video_n(texto, chat_id)
     elif texto == "/abrir":
-        if tarea_vigilancia is None or tarea_vigilancia.done():
-            tarea_vigilancia = asyncio.create_task(vigilar_movimiento(chat_id, 15))
         requests.post("http://localhost:8123/api/webhook/obrir-porta-principal")
-        await asyncio.sleep(120)
-        if tarea_vigilancia and not tarea_vigilancia.done():
-            tarea_vigilancia.cancel()
-            tarea_vigilancia = None
     elif texto == "/terminal":
         if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
             telegram_enviar("⛔ Solo el administrador puede usar /terminal", chat_id)
@@ -263,7 +256,7 @@ def comando_delete(texto, chat_id):
         telegram_enviar("❌ Uso: /delete <IP | Nombre>", chat_id)
 
 async def comando_arm_bool(activar: bool, chat_id):
-    global tarea_vigilancia, modo_home, modo_arm
+    global modo_home, modo_arm
     if blink is None:
         try:
             await conectar_blink()
@@ -272,13 +265,8 @@ async def comando_arm_bool(activar: bool, chat_id):
             return
     if activar:
         await activar_blink(chat_id)
-        if tarea_vigilancia is None or tarea_vigilancia.done():
-            tarea_vigilancia = asyncio.create_task(vigilar_movimiento(chat_id, 30))
     else:
         await desactivar_blink(chat_id)
-        if tarea_vigilancia and not tarea_vigilancia.done():
-            tarea_vigilancia.cancel()
-            tarea_vigilancia = None
 
 async def comando_arm(texto, chat_id):
     global modo_arm, tarea_principal
@@ -471,7 +459,6 @@ async def comando_cap(chat_id):
             telegram_enviar(f"❌ Error tomando foto en {nombre}: {e}", chat_id)
 
 async def comando_rec(texto, chat_id):
-    global tarea_vigilancia
     await blink.refresh()
     if texto.strip() == "/rec":
         mensaje = "📹 Cámaras disponibles:\n"
@@ -489,13 +476,8 @@ async def comando_rec(texto, chat_id):
                 for nombre in ORDEN_CAMARAS:
                     nombre_webhook = nombre.lower().replace(" ", "_")
                     try:
-                        if tarea_vigilancia is None or tarea_vigilancia.done():
-                            tarea_vigilancia = asyncio.create_task(vigilar_movimiento(chat_id, 15))
                         requests.post(f"http://localhost:8123/api/webhook/grabar_{nombre_webhook}")
                         await asyncio.sleep(120)
-                        if tarea_vigilancia and not tarea_vigilancia.done():
-                            tarea_vigilancia.cancel()
-                            tarea_vigilancia = None
                     except Exception as e:
                         errores.append(f"{nombre}: {e}")
                 if errores:
@@ -511,13 +493,8 @@ async def comando_rec(texto, chat_id):
                     nombre_webhook = nombre.lower().replace(" ", "_")
                     try:
                         telegram_enviar(f"▶️ Grabando desde {nombre}... Se enviará al finalizar", chat_id)
-                        if tarea_vigilancia is None or tarea_vigilancia.done():
-                            tarea_vigilancia = asyncio.create_task(vigilar_movimiento(chat_id, 15))
                         requests.post(f"http://localhost:8123/api/webhook/grabar_{nombre_webhook}")
                         await asyncio.sleep(120)
-                        if tarea_vigilancia and not tarea_vigilancia.done():
-                            tarea_vigilancia.cancel()
-                            tarea_vigilancia = None
                     except Exception as e:
                         telegram_enviar(f"❌ Error al lanzar webhook: {e}", chat_id)
                 else:
@@ -765,30 +742,32 @@ async def conectar_blink():
 
 async def activar_blink(chat_id):
     try:
-        sync_module = blink.sync.get(BLINK_MODULE)
+        sync_module = blink.sync[BLINK_MODULE]
         if not sync_module:
             telegram_enviar(f"❌ No encontrado módulo Sync llamado '{BLINK_MODULE}'", chat_id)
             return
-        await sync_module.async_arm(True)
-        telegram_enviar(f"🔒 Blink armado", chat_id)
+        if not sync_module.arm:
+            await sync_module.async_arm(True)
+            telegram_enviar(f"🔒 Blink armado", chat_id)
     except Exception as e:
         telegram_enviar(f"❌ Error activando Blink: {e}", chat_id)
 
 async def desactivar_blink(chat_id):
     try:
-        sync_module = blink.sync.get(BLINK_MODULE)
+        sync_module = blink.sync[BLINK_MODULE]
         if not sync_module:
             telegram_enviar(f"❌ No encontrado módulo Sync llamado '{BLINK_MODULE}'", chat_id)
             return
-        await sync_module.async_arm(False)
-        telegram_enviar(f"🔓 Blink desarmado", chat_id)
+        if sync_module.arm:
+            await sync_module.async_arm(False)
+            telegram_enviar(f"🔓 Blink desarmado", chat_id)
     except Exception as e:
         telegram_enviar(f"❌ Error desactivando Blink: {e}", chat_id)
 
 #Bucles
 
 async def loop_principal(chat_id):
-    global modo_home, modo_arm, armado_actual, APAGAR_BOT, CHECK_INTERVAL, dentro_horario_anterior
+    global modo_home, modo_arm, blink, APAGAR_BOT, CHECK_INTERVAL, dentro_horario_anterior
     while not APAGAR_BOT.is_set():
         try:
             ahora = datetime.now().time()
@@ -822,8 +801,7 @@ async def loop_principal(chat_id):
                 telegram_enviar(f"❌ Valor de /arm desconocido: {modo_arm}", chat_id)
                 await asyncio.sleep(CHECK_INTERVAL)
                 continue
-            if armado_actual != armar:
-                armado_actual = armar
+            if blink.sync[BLINK_MODULE].arm != armar:
                 await comando_arm_bool(armar, chat_id)
             await asyncio.sleep(CHECK_INTERVAL)
         except asyncio.CancelledError:
@@ -843,12 +821,13 @@ async def detectar_presencia(chat_id=TELEGRAM_CHAT_ID):
     try:
         router_ok = await async_ping(IP_ROUTER)
         if not router_ok:
+            print(f"⚠️ No se detecta el router {IP_ROUTER}")
             return None
         presencia_actual = await hay_dispositivos_presentes()
         if not presencia_actual:
             await asyncio.sleep(15)
             presencia_actual = await hay_dispositivos_presentes()
-        if chat_id is not None and presencia_anterior is not None:
+        if router_ok and chat_id is not None and presencia_anterior is not None:
             if presencia_anterior and not presencia_actual:
                 await telegram_enviar("🏠 Home auto ha detectado casa vacía.", chat_id)
             elif not presencia_anterior and presencia_actual:
@@ -857,6 +836,7 @@ async def detectar_presencia(chat_id=TELEGRAM_CHAT_ID):
         return presencia_actual
     except Exception as e:
         print(f"❌ Error en detectar_presencia: {e}")
+
 
 async def vigilar_movimiento(chat_id, refresco):
     global ULTIMOS_CLIPS, videos_ultimas_24h, contador_videos
@@ -1005,10 +985,12 @@ async def main():
     except Exception as e:
         print(f"⚠️ No se pudo conectar a Blink al inicio: {e}")
     tarea_principal = asyncio.create_task(loop_principal(TELEGRAM_CHAT_ID))
+    tarea_vigilancia = asyncio.create_task(vigilar_movimiento(TELEGRAM_CHAT_ID, 30))
     tareas = [
         asyncio.create_task(telegram_recibir()),
         asyncio.create_task(captura_cada_hora()),
-        tarea_principal
+        tarea_principal,
+        tarea_vigilancia
     ]
     print("🚀 Bot iniciado")
     try:
