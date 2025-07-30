@@ -156,9 +156,9 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
     elif texto == "/abrir":
         requests.post("http://localhost:8123/api/webhook/obrir-porta-principal")
     elif texto.startswith("/id"):
-        comando_id(user_id, chat_id)
+        comando_id(texto, user_id, chat_id)
     elif texto == "/terminal":
-        await comando_terminal(texto, user_id, chat_id)
+        await comando_terminal(user_id, chat_id)
     else:
         telegram_enviar("❌ Comando no soportado", chat_id)
 
