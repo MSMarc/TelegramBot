@@ -25,6 +25,8 @@ BLINK_PASS = os.getenv("BLINK_PASS")
 BLINK_MODULE = os.getenv("BLINK_MODULE")
 USUARIOS_AUTORIZADOS = list(filter(None, os.getenv("USUARIOS_AUTORIZADOS", "").split(",")))
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TELEGRAM_CHAT_ID2 = os.getenv("TELEGRAM_CHAT_ID2")
+selected_chat=TELEGRAM_CHAT_ID
 IP_ROUTER = os.getenv("IP_ROUTER", "192.168.1.1")
 ORDEN_CAMARAS = list(filter(None, os.getenv("ORDEN_CAMARAS", "").split(",")))
 REFRESH_SOLICITADO = asyncio.Event()
@@ -77,12 +79,17 @@ contador_videos = cargar_max_id_videos()+1
 
 async def manejar_comando(texto, message_id, chat_id, user_id):
     global USUARIOS_AUTORIZADOS
-    if chat_id in USUARIOS_AUTORIZADOS[1:]:
-        telegram_enviar(f"{NOMBRES_DISPOSITIVOS[USUARIOS_AUTORIZADOS.index(chat_id)]} ha enviado: {texto}", USUARIOS_AUTORIZADOS[1])
     if str(user_id) not in USUARIOS_AUTORIZADOS:
         telegram_enviar("❌ Acceso denegado. Contacta con el administrador para usarme.", chat_id)
         print("Detectado uso no autorizado")
         return
+    if chat_id in USUARIOS_AUTORIZADOS[1:]:
+        try:
+            idx = USUARIOS_AUTORIZADOS.index(chat_id)
+            nombre = NOMBRES_DISPOSITIVOS[idx] if idx < len(NOMBRES_DISPOSITIVOS) else f"Usuario {chat_id}"
+            await telegram_enviar(f"{nombre} ha enviado: {texto}", USUARIOS_AUTORIZADOS[1])
+        except IndexError:
+            await telegram_enviar("⚠️ Faltan usuarios o ids.", USUARIOS_AUTORIZADOS[1])
     if texto.startswith("/say "):
         if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
             telegram_enviar("❌ Comando no soportado", chat_id)
@@ -135,8 +142,7 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
     elif texto == "/videos":
         await comando_videos(chat_id)
     elif texto.startswith("/video "):
-        numero = texto.split(" ")[1]
-        await comando_video(chat_id, numero)
+        await comando_video(chat_id, texto)
     elif texto == "/cap":
         await comando_cap(chat_id)
     elif texto.startswith("/rec"):
@@ -149,20 +155,10 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
         comando_video_n(texto, chat_id)
     elif texto == "/abrir":
         requests.post("http://localhost:8123/api/webhook/obrir-porta-principal")
+    elif texto.startswith("/id"):
+        comando_id(user_id, chat_id)
     elif texto == "/terminal":
-        if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
-            telegram_enviar("⛔ Solo el administrador puede usar /terminal", chat_id)
-            return
-        modo = modo_terminal_por_chat.get(chat_id, False)
-        if not modo:
-            modo_terminal_por_chat[chat_id] = True
-            telegram_enviar("🖥️ Terminal activada. Modo simple, un comando por terminal.", chat_id)
-            if chat_id in temporizadores_terminal:
-                temporizadores_terminal[chat_id].cancel()
-            tarea = asyncio.create_task(cerrar_terminal_por_inactividad(chat_id))
-            temporizadores_terminal[chat_id] = tarea
-        else:
-            telegram_enviar("❌ Ya estás en modo terminal. Usa /terminal otra vez para salir.", chat_id)
+        await comando_terminal(texto, user_id, chat_id)
     else:
         telegram_enviar("❌ Comando no soportado", chat_id)
 
@@ -411,8 +407,9 @@ async def comando_videos(chat_id):
         mensaje = "⚠️ No se encontraron videos en las últimas 24h."
     telegram_enviar(mensaje, chat_id)
 
-async def comando_video(chat_id, numero):
+async def comando_video(chat_id, texto):
     global videos_ultimas_24h
+    numero = texto.split(" ")[1]
     if not videos_ultimas_24h:
         telegram_enviar("⚠️ No hay videos almacenados para mostrar. Usa /videos", chat_id)
         return
@@ -565,6 +562,39 @@ def comando_video_n(texto, chat_id):
             telegram_enviar(f"🏷️ Etiqueta para vídeo {vid_id} guardada: *{etiqueta.strip()}*", chat_id)
     except Exception as e:
         telegram_enviar(f"❌ Error etiquetando vídeo: {e}", chat_id)
+
+def comando_id(texto, user_id, chat_id):
+    global selected_chat
+    if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
+        telegram_enviar("❌ Comando no soportado", chat_id)
+        return
+    try:
+        opcion = texto.split()[1]
+        if opcion == "1":
+            selected_chat = TELEGRAM_CHAT_ID
+            telegram_enviar("🔄️ Cambio a chat 1", chat_id)
+        elif opcion == "2":
+            selected_chat = TELEGRAM_CHAT_ID2
+            telegram_enviar("🔄️ Cambio a chat 2", chat_id)
+        else:
+            telegram_enviar("❌ Opción inválida. Usa /id 1 o /id 2", chat_id)
+    except IndexError:
+        telegram_enviar("❌ Formato incorrecto. Usa /id 1 o /id 2", chat_id)
+
+async def comando_terminal(user_id, chat_id):
+    if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
+        telegram_enviar("⛔ Solo el administrador puede usar /terminal", chat_id)
+        return
+    modo = modo_terminal_por_chat.get(chat_id, False)
+    if not modo:
+        modo_terminal_por_chat[chat_id] = True
+        telegram_enviar("🖥️ Terminal activada. Modo simple, un comando por terminal.", chat_id)
+        if chat_id in temporizadores_terminal:
+            temporizadores_terminal[chat_id].cancel()
+        tarea = asyncio.create_task(cerrar_terminal_por_inactividad(chat_id))
+        temporizadores_terminal[chat_id] = tarea
+    else:
+        telegram_enviar("❌ Ya estás en modo terminal. Usa /terminal otra vez para salir.", chat_id)
 
 #Gestionar telegram
 
@@ -810,7 +840,7 @@ async def loop_principal(chat_id):
             await asyncio.sleep(CHECK_INTERVAL/2)
     print("end loop_principal")
 
-async def detectar_presencia(chat_id=TELEGRAM_CHAT_ID):
+async def detectar_presencia():
     global presencia_anterior
     async def hay_dispositivos_presentes():
         for ip in IP_DISPOSITIVOS:
@@ -826,19 +856,19 @@ async def detectar_presencia(chat_id=TELEGRAM_CHAT_ID):
         if not presencia_actual:
             await asyncio.sleep(15)
             presencia_actual = await hay_dispositivos_presentes()
-        if router_ok and chat_id is not None and presencia_anterior is not None:
+        if router_ok and TELEGRAM_CHAT_ID is not None and presencia_anterior is not None:
             if presencia_anterior and not presencia_actual:
-                telegram_enviar("🏠 Home auto ha detectado casa vacía.", chat_id)
+                telegram_enviar("🏠 Home auto ha detectado casa vacía.", TELEGRAM_CHAT_ID)
             elif not presencia_anterior and presencia_actual:
-                telegram_enviar("🏠 Home auto ha detectado alguien en casa.", chat_id)
+                telegram_enviar("🏠 Home auto ha detectado alguien en casa.", TELEGRAM_CHAT_ID)
         presencia_anterior = presencia_actual
         return presencia_actual
     except Exception as e:
         print(f"❌ Error en detectar_presencia: {e}")
 
 
-async def vigilar_movimiento(chat_id):
-    global ULTIMOS_CLIPS, videos_ultimas_24h, contador_videos
+async def vigilar_movimiento():
+    global ULTIMOS_CLIPS, videos_ultimas_24h, contador_videos, selected_chat
     try:
         while not APAGAR_BOT.is_set():
             try:
@@ -850,6 +880,8 @@ async def vigilar_movimiento(chat_id):
                     nuevo_hash = hash(video_bytes)
                     if ULTIMOS_CLIPS.get(nombre) == nuevo_hash:
                         continue
+                    if len(ULTIMOS_CLIPS) >= 10:
+                        ULTIMOS_CLIPS.popitem(last=False)
                     ULTIMOS_CLIPS[nombre] = nuevo_hash
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     fecha_str = datetime.strptime(timestamp, "%Y%m%d_%H%M%S").strftime("%H:%M:%S del %d-%m-%y")
@@ -868,7 +900,7 @@ async def vigilar_movimiento(chat_id):
                         f"🎥 Cámara: *{nombre}*\n"
                         f"📆 Fecha: {fecha_str}\n"
                     )
-                    await telegram_enviar_video(chat_id, filename, caption)
+                    await telegram_enviar_video(selected_chat, filename, caption)
                     contador_videos += 1
                 await asyncio.sleep(CHECK_INTERVAL)
             except Exception as e:
@@ -991,7 +1023,7 @@ async def main():
     except Exception as e:
         print(f"⚠️ No se pudo conectar a Blink al inicio: {e}")
     tarea_principal = asyncio.create_task(loop_principal(TELEGRAM_CHAT_ID))
-    tarea_vigilancia = asyncio.create_task(vigilar_movimiento(TELEGRAM_CHAT_ID))
+    tarea_vigilancia = asyncio.create_task(vigilar_movimiento())
     tareas = [
         asyncio.create_task(telegram_recibir()),
         asyncio.create_task(captura_cada_hora()),
@@ -1006,7 +1038,7 @@ async def main():
     except Exception as e:
         print(f"❌ Error en tareas principales: {e}")
     await cerrar_sesion()
-    print("Bot apagado correctamente.")
+    print("🛑 Bot apagado correctamente.")
 
 if __name__ == "__main__":
     asyncio.run(main())
