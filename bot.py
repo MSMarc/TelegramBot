@@ -37,8 +37,6 @@ blink = None
 CHECK_INTERVAL = 30
 ULTIMOS_CLIPS = {}
 videos_ultimas_24h = []
-tarea_vigilancia = None
-tarea_principal = None
 session = None
 presencia_anterior = None
 dentro_horario_anterior = False
@@ -280,7 +278,7 @@ async def comando_arm(texto, chat_id):
     elif len(partes) == 1:
         
         if modo_arm=="auto":
-            telegram_enviar(f"🔒 Estado actual /arm auto. Decisión: *{blink.sync[BLINK_MODULE].arm}*", chat_id)
+            telegram_enviar(f"🔒 Estado actual /arm auto. (Auto=*{blink.sync[BLINK_MODULE].arm}*)", chat_id)
         else:
             telegram_enviar(f"🔒 Estado actual /arm *{modo_arm}*", chat_id)
     else:
@@ -771,7 +769,7 @@ async def desactivar_blink(chat_id):
 #Bucles
 
 async def loop_principal(chat_id):
-    global modo_home, modo_arm, blink, APAGAR_BOT, CHECK_INTERVAL, dentro_horario_anterior
+    global modo_home, modo_arm, APAGAR_BOT, dentro_horario_anterior
     while not APAGAR_BOT.is_set():
         try:
             ahora = datetime.now().time()
@@ -833,9 +831,9 @@ async def detectar_presencia(chat_id=TELEGRAM_CHAT_ID):
             presencia_actual = await hay_dispositivos_presentes()
         if router_ok and chat_id is not None and presencia_anterior is not None:
             if presencia_anterior and not presencia_actual:
-                await telegram_enviar("🏠 Home auto ha detectado casa vacía.", chat_id)
+                telegram_enviar("🏠 Home auto ha detectado casa vacía.", chat_id)
             elif not presencia_anterior and presencia_actual:
-                await telegram_enviar("🏠 Home auto ha detectado alguien en casa.", chat_id)
+                telegram_enviar("🏠 Home auto ha detectado alguien en casa.", chat_id)
         presencia_anterior = presencia_actual
         return presencia_actual
     except Exception as e:
@@ -991,21 +989,20 @@ def actualizar_env():
 #Main
 
 async def main():
-    global tarea_principal
     await crear_sesion()
     try:
         await conectar_blink()
     except Exception as e:
         print(f"⚠️ No se pudo conectar a Blink al inicio: {e}")
     tarea_principal = asyncio.create_task(loop_principal(TELEGRAM_CHAT_ID))
-    tarea_vigilancia = asyncio.create_task(vigilar_movimiento(TELEGRAM_CHAT_ID, 30))
+    tarea_vigilancia = asyncio.create_task(vigilar_movimiento(TELEGRAM_CHAT_ID, CHECK_INTERVAL))
     tareas = [
         asyncio.create_task(telegram_recibir()),
         asyncio.create_task(captura_cada_hora()),
         tarea_principal,
         tarea_vigilancia
     ]
-    print("🚀 Bot iniciado")
+    telegram_enviar("🚀 Bot iniciado", TELEGRAM_CHAT_ID)
     try:
         await asyncio.gather(*tareas)
     except asyncio.CancelledError:
