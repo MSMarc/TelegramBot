@@ -447,8 +447,6 @@ async def comando_cap(chat_id):
             telegram_enviar(f"❌ Error tomando foto en {nombre}: {e}", chat_id)
 
 async def comando_rec(texto, chat_id):
-    global CHECK_INTERVAL
-    CHECK_INTERVAL_valor=CHECK_INTERVAL
     await blink.refresh()
     if texto.strip() == "/rec":
         mensaje = "📹 Cámaras disponibles:\n"
@@ -473,10 +471,6 @@ async def comando_rec(texto, chat_id):
                     telegram_enviar("❌ Algunos errores al lanzar webhooks:\n" + "\n".join(errores), chat_id)
                 else:
                     telegram_enviar("▶️ Grabando desde todas las cámaras... Se enviará al finalizar", chat_id)
-                    await asyncio.sleep(35)
-                    CHECK_INTERVAL = 15
-                    await asyncio.sleep(60)
-                    CHECK_INTERVAL = CHECK_INTERVAL_valor
             elif not partes[1].isdigit():
                 telegram_enviar("❌ Uso incorrecto. Prueba `/rec X` o `/rec all`", chat_id)
             else:
@@ -486,10 +480,6 @@ async def comando_rec(texto, chat_id):
                     try:
                         requests.post(f"http://localhost:8123/api/webhook/grabar_{nombre_webhook}")
                         telegram_enviar(f"▶️ Grabando desde {nombre}... Se enviará al finalizar", chat_id)
-                        await asyncio.sleep(35)
-                        CHECK_INTERVAL = 15
-                        await asyncio.sleep(60)
-                        CHECK_INTERVAL = CHECK_INTERVAL_valor
                     except Exception as e:
                         telegram_enviar(f"❌ Error al lanzar webhook en {nombre}: {e}", chat_id)
                 else:
@@ -777,6 +767,7 @@ async def activar_blink(chat_id):
         if not sync_module.arm:
             await sync_module.async_arm(True)
             telegram_enviar(f"🔒 Blink armado", chat_id)
+            await asyncio.sleep(CHECK_INTERVAL)
     except Exception as e:
         telegram_enviar(f"❌ Error activando Blink: {e}", chat_id)
 
@@ -789,6 +780,7 @@ async def desactivar_blink(chat_id):
         if sync_module.arm:
             await sync_module.async_arm(False)
             telegram_enviar(f"🔓 Blink desarmado", chat_id)
+            await asyncio.sleep(CHECK_INTERVAL)
     except Exception as e:
         telegram_enviar(f"❌ Error desactivando Blink: {e}", chat_id)
 
