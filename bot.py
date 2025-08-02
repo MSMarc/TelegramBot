@@ -925,6 +925,7 @@ async def captura_cada_hora():
                     await camera.image_to_file(path)
                 except Exception as e:
                     print(f"❌ Error capturando con {nombre}: {e}")
+            print(f"📸 Finalizada captura a las {datetime.now().strftime('%H:%M:%S')}")
         except Exception as e:
             print(f"⚠️ Error global en captura: {e}")
 
