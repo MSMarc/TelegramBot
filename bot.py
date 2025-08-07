@@ -155,6 +155,8 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
         comando_video_n(texto, chat_id)
     elif texto == "/abrir":
         requests.post("http://localhost:8123/api/webhook/obrir-porta-principal")
+    elif texto == "/cochera" or texto == "/cotxera":
+        requests.post("http://localhost:8123/api/webhook/obrir-cotxera")
     elif texto.startswith("/id"):
         comando_id(texto, user_id, chat_id)
     elif texto == "/terminal":
@@ -925,7 +927,6 @@ async def captura_cada_hora():
                     await camera.image_to_file(path)
                 except Exception as e:
                     print(f"❌ Error capturando con {nombre}: {e}")
-            print(f"📸 Finalizada captura a las {datetime.now().strftime('%H:%M:%S')}")
         except Exception as e:
             print(f"⚠️ Error global en captura: {e}")
 
