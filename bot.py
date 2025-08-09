@@ -1101,6 +1101,7 @@ async def main():
     tarea_vigilancia = asyncio.create_task(vigilar_movimiento())
     tarea_mqtt = asyncio.create_task(mqtt_escuchar())
     tarea_cochera = asyncio.create_task(monitor_cochera())
+    await comando_cochera_update()
     tareas = [
         asyncio.create_task(telegram_recibir()),
         asyncio.create_task(captura_cada_hora()),
