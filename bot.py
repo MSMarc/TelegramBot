@@ -1119,7 +1119,7 @@ async def main():
         tarea_mqtt,
         tarea_cochera,
     ]
-    telegram_enviar("🚀 Bot iniciado", TELEGRAM_CHAT_ID)
+    print("🚀 Bot iniciado")
     try:
         await asyncio.gather(*tareas)
     except asyncio.CancelledError:
