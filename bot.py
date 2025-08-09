@@ -14,6 +14,7 @@ import aiofiles
 from datetime import time
 from collections import OrderedDict
 import subprocess
+from aiomqtt import Client
 
 load_dotenv()
 
@@ -45,6 +46,8 @@ presencia_anterior = None
 dentro_horario_anterior = False
 modo_terminal_por_chat = {}
 temporizadores_terminal = {}
+Cerrado = True
+estado_anterior = None
 
 #Cargar datos
 
@@ -79,7 +82,7 @@ contador_videos = cargar_max_id_videos()+1
 #Gestionar comandos
 
 async def manejar_comando(texto, message_id, chat_id, user_id):
-    global USUARIOS_AUTORIZADOS
+    global USUARIOS_AUTORIZADOS, estado_anterior
     if str(user_id) not in USUARIOS_AUTORIZADOS:
         telegram_enviar("❌ Acceso denegado. Contacta con el administrador para usarme.", chat_id)
         print("Detectado uso no autorizado")
@@ -159,6 +162,7 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
     elif texto == "/cochera" or texto == "/cotxera":
         requests.post("http://localhost:8123/api/webhook/obrir-cotxera")
     elif texto == "/cochera_status" or texto == "/cotxera_status":
+        estado_anterior = None
         await comando_cochera_update()
     elif texto == "/tanca":
         requests.post("http://localhost:8123/api/webhook/obrir-tanca")
@@ -1016,11 +1020,6 @@ def actualizar_env():
 
 #MQTT
 
-from aiomqtt import Client
-
-Cerrado = True
-estado_anterior = None
-
 async def mqtt_escuchar():
     global Cerrado, estado_anterior
     try:
@@ -1045,8 +1044,6 @@ async def mqtt_escuchar():
         await mqtt_escuchar()
 
 async def comando_cochera_update():
-    global estado_anterior
-    estado_anterior = None
     try:
         async with Client("localhost", 1883, username="marc", password=MQTT_PASSWORD) as client:
             await client.publish("shellyplus1-cotxera/command", "status_update")
