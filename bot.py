@@ -88,9 +88,9 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
         try:
             idx = USUARIOS_AUTORIZADOS.index(chat_id)
             nombre = NOMBRES_DISPOSITIVOS[idx] if idx < len(NOMBRES_DISPOSITIVOS) else f"Usuario {chat_id}"
-            await telegram_enviar(f"{nombre} ha enviado: {texto}", USUARIOS_AUTORIZADOS[1])
+            telegram_enviar(f"{nombre} ha enviado: {texto}", USUARIOS_AUTORIZADOS[1])
         except IndexError:
-            await telegram_enviar("⚠️ Faltan usuarios o ids.", USUARIOS_AUTORIZADOS[1])
+            telegram_enviar("⚠️ Faltan usuarios o ids.", USUARIOS_AUTORIZADOS[1])
     if texto.startswith("/say "):
         if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
             telegram_enviar("❌ Comando no soportado", chat_id)
@@ -1036,9 +1036,9 @@ async def mqtt_escuchar():
                     if Cerrado != estado_anterior:
                         estado_anterior = Cerrado
                         if Cerrado:
-                            await telegram_enviar("🔴 Cochera cerrada")
+                            telegram_enviar("🔴 Cochera cerrada", TELEGRAM_CHAT_ID)
                         else:
-                            await telegram_enviar("🟢 Cochera abierta")
+                            telegram_enviar("🟢 Cochera abierta", TELEGRAM_CHAT_ID)
                 except Exception as e:
                     print(f"Error parseando MQTT: {e}")
     except Exception as e:
@@ -1047,6 +1047,8 @@ async def mqtt_escuchar():
         await mqtt_escuchar()
 
 async def comando_cochera_update():
+    global estado_anterior
+    estado_anterior = None
     try:
         async with Client("localhost", 1883, username="marc", password=MQTT_PASSWORD) as client:
             await client.publish("shellyplus1-cotxera/command", "status_update")
@@ -1079,7 +1081,7 @@ async def monitor_cochera():
                     tiempo_abierta_actual = datetime.now() - tiempo_abierta
                     if not aviso_10min_hecho and tiempo_abierta_actual >= timedelta(minutes=10):
                         tiempo_str = formatear_tiempo(tiempo_abierta_actual)
-                        await telegram_enviar(f"⏰ La cochera está abierta desde hace {tiempo_str}. Recuerda cerrarla.")
+                        telegram_enviar(f"⏰ La cochera está abierta desde hace {tiempo_str}. Recuerda cerrarla.")
                         aviso_10min_hecho = True
                         ultimo_aviso = datetime.now()
                     elif aviso_10min_hecho:
@@ -1088,7 +1090,7 @@ async def monitor_cochera():
                         tiempo_desde_ultimo_aviso = datetime.now() - ultimo_aviso
                         if tiempo_desde_ultimo_aviso >= timedelta(minutes=30):
                             tiempo_str = formatear_tiempo(tiempo_abierta_actual)
-                            await telegram_enviar(f"⏰ La cochera sigue abierta desde hace {tiempo_str}. Por favor, recuerda cerrarla.")
+                            telegram_enviar(f"⏰ La cochera sigue abierta desde hace {tiempo_str}. Por favor, recuerda cerrarla.")
                             ultimo_aviso = datetime.now()
             else:
                 tiempo_abierta = None
