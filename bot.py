@@ -1018,7 +1018,7 @@ def actualizar_env():
 
 #MQTT
 
-from asyncio_mqtt import Client
+from aiomqtt import Client
 
 Cerrado = None
 estado_anterior = None

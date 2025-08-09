@@ -4,4 +4,4 @@ requests
 python-dotenv
 blinkpy
 python-telegram-bot
-asyncio-mqtt
+aiomqtt
