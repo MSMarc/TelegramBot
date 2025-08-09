@@ -1020,7 +1020,7 @@ def actualizar_env():
 
 from aiomqtt import Client
 
-Cerrado = None
+Cerrado = True
 estado_anterior = None
 
 async def mqtt_escuchar():
