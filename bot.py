@@ -267,7 +267,7 @@ async def comando_arm_bool(activar: bool, chat_id):
         await desactivar_blink(chat_id)
 
 async def comando_arm(texto, chat_id):
-    global modo_arm, tarea_principal
+    global modo_arm
     partes = texto.split()
     if len(partes) == 2 and partes[1] in ["auto", "true", "false"]:
         nuevo_valor = partes[1]
@@ -284,7 +284,7 @@ async def comando_arm(texto, chat_id):
         telegram_enviar("❌ Uso: /arm true | false | auto", chat_id)
 
 async def comando_home(texto, chat_id):
-    global modo_home, tarea_principal
+    global modo_home
     partes = texto.split()
     if len(partes) == 2 and partes[1] in ["auto", "true", "false"]:
         nuevo_valor = partes[1]
@@ -1103,19 +1103,15 @@ async def main():
         await conectar_blink()
     except Exception as e:
         print(f"⚠️ No se pudo conectar a Blink al inicio: {e}")
-    tarea_principal = asyncio.create_task(loop_principal(TELEGRAM_CHAT_ID))
-    tarea_vigilancia = asyncio.create_task(vigilar_movimiento())
-    tarea_mqtt = asyncio.create_task(mqtt_escuchar())
-    tarea_cochera = asyncio.create_task(monitor_cochera())
-    await comando_cochera_update()
     tareas = [
         asyncio.create_task(telegram_recibir()),
         asyncio.create_task(captura_cada_hora()),
-        tarea_principal,
-        tarea_vigilancia,
-        tarea_mqtt,
-        tarea_cochera,
+        asyncio.create_task(loop_principal(TELEGRAM_CHAT_ID)),
+        asyncio.create_task(vigilar_movimiento()),
+        asyncio.create_task(mqtt_escuchar()),
+        asyncio.create_task(monitor_cochera()),
     ]
+    await comando_cochera_update()
     print("🚀 Bot iniciado")
     try:
         await asyncio.gather(*tareas)
