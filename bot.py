@@ -33,6 +33,7 @@ REFRESH_SOLICITADO = asyncio.Event()
 APAGAR_BOT = asyncio.Event()
 CONFIG_PATH = "blink_config.json"
 RUTA_ETIQUETAS = "etiquetas_videos.json"
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
 modo_home = "auto"
 modo_arm = "auto"
 blink = None
@@ -157,11 +158,15 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
         requests.post("http://localhost:8123/api/webhook/obrir-porta-principal")
     elif texto == "/cochera" or texto == "/cotxera":
         requests.post("http://localhost:8123/api/webhook/obrir-cotxera")
+        await comando_cochera_update()
+    elif texto == "/cochera_update" or texto == "/cotxera_update":
+        await comando_cochera_update()
     elif texto == "/tanca":
         requests.post("http://localhost:8123/api/webhook/obrir-tanca")
     elif texto == "/car":
         requests.post("http://localhost:8123/api/webhook/obrir-tanca")
         requests.post("http://localhost:8123/api/webhook/obrir-cotxera")
+        await comando_cochera_update()
     elif texto.startswith("/id"):
         comando_id(texto, user_id, chat_id)
     elif texto == "/terminal":
@@ -1011,6 +1016,79 @@ def actualizar_env():
     with open(".env", "w") as f:
         f.write("\n".join(nuevas_lineas) + "\n")
 
+#MQTT
+
+from asyncio_mqtt import Client
+
+Cerrado = None
+estado_anterior = None
+
+async def mqtt_escuchar():
+    global Cerrado
+    global estado_anterior
+    async with Client("localhost", 1883, username="marc", password=MQTT_PASSWORD) as client:
+        async with client.unfiltered_messages() as messages:
+            await client.subscribe("shellyplus1-cotxera/status/input:0")
+            async for message in messages:
+                payload = message.payload.decode()
+                try:
+                    data = json.loads(payload)
+                    Cerrado = data.get("state", None)
+                    if Cerrado != estado_anterior:
+                        estado_anterior = Cerrado
+                        if Cerrado:
+                            await telegram_enviar("🔴 Cochera cerrada")
+                        else:
+                            await telegram_enviar("🟢 Cochera abierta")
+                except Exception as e:
+                    print(f"Error parseando MQTT: {e}")
+
+async def comando_cochera_update():
+    async with Client("localhost", 1883, username="marc", password=MQTT_PASSWORD) as client:
+        await client.publish("shellyplus1-cotxera/command", "status_update")
+
+def formatear_tiempo(duracion):
+    minutos = duracion.seconds // 60
+    horas = minutos // 60
+    minutos = minutos % 60
+    if horas > 0:
+        return f"{horas}h {minutos}min"
+    else:
+        return f"{minutos}min"
+
+async def monitor_cochera():
+    global Cerrado
+    tiempo_abierta = None
+    aviso_10min_hecho = False
+    ultimo_aviso = None
+    while True:
+        if Cerrado is False:
+            await comando_cochera_update()
+            if tiempo_abierta is None:
+                tiempo_abierta = datetime.now()
+                aviso_10min_hecho = False
+                ultimo_aviso = None
+            else:
+                tiempo_abierta_actual = datetime.now() - tiempo_abierta
+                if not aviso_10min_hecho and tiempo_abierta_actual >= timedelta(minutes=10):
+                    tiempo_str = formatear_tiempo(tiempo_abierta_actual)
+                    telegram_enviar(f"⏰ La cochera está abierta desde hace {tiempo_str}. Recuerda cerrarla.")
+                    aviso_10min_hecho = True
+                    ultimo_aviso = datetime.now()
+                elif aviso_10min_hecho:
+                    if ultimo_aviso is None:
+                        ultimo_aviso = datetime.now()
+                    tiempo_desde_ultimo_aviso = datetime.now() - ultimo_aviso
+                    if tiempo_desde_ultimo_aviso >= timedelta(minutes=30):
+                        tiempo_str = formatear_tiempo(tiempo_abierta_actual)
+                        telegram_enviar(f"⏰ La cochera sigue abierta desde hace {tiempo_str}. Por favor, recuerda cerrarla.")
+                        ultimo_aviso = datetime.now()
+        else:
+            tiempo_abierta = None
+            aviso_10min_hecho = False
+            ultimo_aviso = None
+        await asyncio.sleep(60)
+
 #Main
 
 async def main():
@@ -1021,11 +1099,15 @@ async def main():
         print(f"⚠️ No se pudo conectar a Blink al inicio: {e}")
     tarea_principal = asyncio.create_task(loop_principal(TELEGRAM_CHAT_ID))
     tarea_vigilancia = asyncio.create_task(vigilar_movimiento())
+    tarea_mqtt = asyncio.create_task(mqtt_escuchar())
+    tarea_cochera = asyncio.create_task(monitor_cochera())
     tareas = [
         asyncio.create_task(telegram_recibir()),
         asyncio.create_task(captura_cada_hora()),
         tarea_principal,
-        tarea_vigilancia
+        tarea_vigilancia,
+        tarea_mqtt,
+        tarea_cochera,
     ]
     telegram_enviar("🚀 Bot iniciado", TELEGRAM_CHAT_ID)
     try:
