@@ -1027,7 +1027,7 @@ async def mqtt_escuchar():
     global Cerrado
     global estado_anterior
     async with Client("localhost", 1883, username="marc", password=MQTT_PASSWORD) as client:
-        async with client.unfiltered_messages() as messages:
+        async with client.messages() as messages:
             await client.subscribe("shellyplus1-cotxera/status/input:0")
             async for message in messages:
                 payload = message.payload.decode()
