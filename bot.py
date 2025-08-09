@@ -466,12 +466,12 @@ async def comando_rec(texto, chat_id):
         if len(partes) != 2:
             telegram_enviar("❌ Uso incorrecto. Prueba `/rec X` o `/rec all`", chat_id)
         else:
-            nombre_webhook = nombre.lower().replace(" ", "_")
             if partes[1].lower() == "all":
                 errores = []
                 for nombre in ORDEN_CAMARAS:
                     try:
-                        requests.post(f"http://localhost:8123/api/webhook/grabar_{nombre_webhook}")
+                        requests.post(f"http://localhost:8123/api/webhook/grabar_{nombre}")
+                        print(nombre)
                     except Exception as e:
                         errores.append(f"{nombre}: {e}")
                 if errores:
@@ -485,7 +485,8 @@ async def comando_rec(texto, chat_id):
                 if 0 <= indice < len(ORDEN_CAMARAS):
                     nombre = ORDEN_CAMARAS[indice]
                     try:
-                        requests.post(f"http://localhost:8123/api/webhook/grabar_{nombre_webhook}")
+                        requests.post(f"http://localhost:8123/api/webhook/grabar_{nombre}")
+                        print(nombre)
                         telegram_enviar(f"▶️ Grabando desde {nombre}... Se enviará al finalizar", chat_id)
                     except Exception as e:
                         telegram_enviar(f"❌ Error al lanzar webhook en {nombre}: {e}", chat_id)
