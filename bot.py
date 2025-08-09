@@ -1027,21 +1027,20 @@ async def mqtt_escuchar():
     global Cerrado, estado_anterior
     try:
         async with Client("localhost", 1883, username="marc", password=MQTT_PASSWORD) as client:
-            async with client.messages as messages:
-                await client.subscribe("shellyplus1-cotxera/status/input:0")
-                async for message in messages:
-                    payload = message.payload.decode()
-                    try:
-                        data = json.loads(payload)
-                        Cerrado = data.get("state", None)
-                        if Cerrado != estado_anterior:
-                            estado_anterior = Cerrado
-                            if Cerrado:
-                                await telegram_enviar("🔴 Cochera cerrada")
-                            else:
-                                await telegram_enviar("🟢 Cochera abierta")
-                    except Exception as e:
-                        print(f"Error parseando MQTT: {e}")
+            await client.subscribe("shellyplus1-cotxera/status/input:0")
+            async for message in client.messages:
+                payload = message.payload.decode()
+                try:
+                    data = json.loads(payload)
+                    Cerrado = data.get("state", None)
+                    if Cerrado != estado_anterior:
+                        estado_anterior = Cerrado
+                        if Cerrado:
+                            await telegram_enviar("🔴 Cochera cerrada")
+                        else:
+                            await telegram_enviar("🟢 Cochera abierta")
+                except Exception as e:
+                    print(f"Error parseando MQTT: {e}")
     except Exception as e:
         print(f"❌ Error al recibir MQTT: {e}")
         await asyncio.sleep(10)
