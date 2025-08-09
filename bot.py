@@ -1024,28 +1024,35 @@ Cerrado = None
 estado_anterior = None
 
 async def mqtt_escuchar():
-    global Cerrado
-    global estado_anterior
-    async with Client("localhost", 1883, username="marc", password=MQTT_PASSWORD) as client:
-        async with client.messages() as messages:
-            await client.subscribe("shellyplus1-cotxera/status/input:0")
-            async for message in messages:
-                payload = message.payload.decode()
-                try:
-                    data = json.loads(payload)
-                    Cerrado = data.get("state", None)
-                    if Cerrado != estado_anterior:
-                        estado_anterior = Cerrado
-                        if Cerrado:
-                            await telegram_enviar("🔴 Cochera cerrada")
-                        else:
-                            await telegram_enviar("🟢 Cochera abierta")
-                except Exception as e:
-                    print(f"Error parseando MQTT: {e}")
+    global Cerrado, estado_anterior
+    try:
+        async with Client("localhost", 1883, username="marc", password=MQTT_PASSWORD) as client:
+            async with client.messages as messages:
+                await client.subscribe("shellyplus1-cotxera/status/input:0")
+                async for message in messages:
+                    payload = message.payload.decode()
+                    try:
+                        data = json.loads(payload)
+                        Cerrado = data.get("state", None)
+                        if Cerrado != estado_anterior:
+                            estado_anterior = Cerrado
+                            if Cerrado:
+                                await telegram_enviar("🔴 Cochera cerrada")
+                            else:
+                                await telegram_enviar("🟢 Cochera abierta")
+                    except Exception as e:
+                        print(f"Error parseando MQTT: {e}")
+    except Exception as e:
+        print(f"❌ Error al recibir MQTT: {e}")
+        await asyncio.sleep(10)
+        await mqtt_escuchar()
 
 async def comando_cochera_update():
-    async with Client("localhost", 1883, username="marc", password=MQTT_PASSWORD) as client:
-        await client.publish("shellyplus1-cotxera/command", "status_update")
+    try:
+        async with Client("localhost", 1883, username="marc", password=MQTT_PASSWORD) as client:
+            await client.publish("shellyplus1-cotxera/command", "status_update")
+    except Exception as e:
+        print(f"❌ Error al enviar MQTT: {e}")
 
 def formatear_tiempo(duracion):
     minutos = duracion.seconds // 60
@@ -1062,31 +1069,34 @@ async def monitor_cochera():
     aviso_10min_hecho = False
     ultimo_aviso = None
     while True:
-        if Cerrado is False:
-            await comando_cochera_update()
-            if tiempo_abierta is None:
-                tiempo_abierta = datetime.now()
+        try:
+            if Cerrado is False:
+                await comando_cochera_update()
+                if tiempo_abierta is None:
+                    tiempo_abierta = datetime.now()
+                    aviso_10min_hecho = False
+                    ultimo_aviso = None
+                else:
+                    tiempo_abierta_actual = datetime.now() - tiempo_abierta
+                    if not aviso_10min_hecho and tiempo_abierta_actual >= timedelta(minutes=10):
+                        tiempo_str = formatear_tiempo(tiempo_abierta_actual)
+                        await telegram_enviar(f"⏰ La cochera está abierta desde hace {tiempo_str}. Recuerda cerrarla.")
+                        aviso_10min_hecho = True
+                        ultimo_aviso = datetime.now()
+                    elif aviso_10min_hecho:
+                        if ultimo_aviso is None:
+                            ultimo_aviso = datetime.now()
+                        tiempo_desde_ultimo_aviso = datetime.now() - ultimo_aviso
+                        if tiempo_desde_ultimo_aviso >= timedelta(minutes=30):
+                            tiempo_str = formatear_tiempo(tiempo_abierta_actual)
+                            await telegram_enviar(f"⏰ La cochera sigue abierta desde hace {tiempo_str}. Por favor, recuerda cerrarla.")
+                            ultimo_aviso = datetime.now()
+            else:
+                tiempo_abierta = None
                 aviso_10min_hecho = False
                 ultimo_aviso = None
-            else:
-                tiempo_abierta_actual = datetime.now() - tiempo_abierta
-                if not aviso_10min_hecho and tiempo_abierta_actual >= timedelta(minutes=10):
-                    tiempo_str = formatear_tiempo(tiempo_abierta_actual)
-                    telegram_enviar(f"⏰ La cochera está abierta desde hace {tiempo_str}. Recuerda cerrarla.")
-                    aviso_10min_hecho = True
-                    ultimo_aviso = datetime.now()
-                elif aviso_10min_hecho:
-                    if ultimo_aviso is None:
-                        ultimo_aviso = datetime.now()
-                    tiempo_desde_ultimo_aviso = datetime.now() - ultimo_aviso
-                    if tiempo_desde_ultimo_aviso >= timedelta(minutes=30):
-                        tiempo_str = formatear_tiempo(tiempo_abierta_actual)
-                        telegram_enviar(f"⏰ La cochera sigue abierta desde hace {tiempo_str}. Por favor, recuerda cerrarla.")
-                        ultimo_aviso = datetime.now()
-        else:
-            tiempo_abierta = None
-            aviso_10min_hecho = False
-            ultimo_aviso = None
+        except Exception as e:
+            print(f"❌ Error en monitor_cochera: {e}")
         await asyncio.sleep(60)
 
 #Main
