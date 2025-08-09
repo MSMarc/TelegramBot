@@ -470,8 +470,7 @@ async def comando_rec(texto, chat_id):
                 errores = []
                 for nombre in ORDEN_CAMARAS:
                     try:
-                        requests.post(f"http://localhost:8123/api/webhook/grabar_{nombre}")
-                        print(nombre)
+                        requests.post(f"http://localhost:8123/api/webhook/grabar_{nombre.lower()}")
                     except Exception as e:
                         errores.append(f"{nombre}: {e}")
                 if errores:
@@ -485,8 +484,7 @@ async def comando_rec(texto, chat_id):
                 if 0 <= indice < len(ORDEN_CAMARAS):
                     nombre = ORDEN_CAMARAS[indice]
                     try:
-                        requests.post(f"http://localhost:8123/api/webhook/grabar_{nombre}")
-                        print(nombre)
+                        requests.post(f"http://localhost:8123/api/webhook/grabar_{nombre.lower()}")
                         telegram_enviar(f"▶️ Grabando desde {nombre}... Se enviará al finalizar", chat_id)
                     except Exception as e:
                         telegram_enviar(f"❌ Error al lanzar webhook en {nombre}: {e}", chat_id)
