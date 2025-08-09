@@ -47,7 +47,7 @@ dentro_horario_anterior = False
 modo_terminal_por_chat = {}
 temporizadores_terminal = {}
 Cerrado = True
-estado_anterior = None
+cerrado_anterior = True
 
 #Cargar datos
 
@@ -82,7 +82,7 @@ contador_videos = cargar_max_id_videos()+1
 #Gestionar comandos
 
 async def manejar_comando(texto, message_id, chat_id, user_id):
-    global USUARIOS_AUTORIZADOS, estado_anterior
+    global USUARIOS_AUTORIZADOS, cerrado_anterior
     if str(user_id) not in USUARIOS_AUTORIZADOS:
         telegram_enviar("❌ Acceso denegado. Contacta con el administrador para usarme.", chat_id)
         print("Detectado uso no autorizado")
@@ -162,7 +162,7 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
     elif texto == "/cochera" or texto == "/cotxera":
         requests.post("http://localhost:8123/api/webhook/obrir-cotxera")
     elif texto == "/cochera_status" or texto == "/cotxera_status":
-        estado_anterior = None
+        cerrado_anterior = None
         await comando_cochera_update()
     elif texto == "/tanca":
         requests.post("http://localhost:8123/api/webhook/obrir-tanca")
@@ -1021,7 +1021,7 @@ def actualizar_env():
 #MQTT
 
 async def mqtt_escuchar():
-    global Cerrado, estado_anterior
+    global Cerrado, cerrado_anterior
     try:
         async with Client("localhost", 1883, username="marc", password=MQTT_PASSWORD) as client:
             await client.subscribe("shellyplus1-cotxera/status/input:0")
@@ -1030,8 +1030,8 @@ async def mqtt_escuchar():
                 try:
                     data = json.loads(payload)
                     Cerrado = data.get("state", None)
-                    if Cerrado != estado_anterior:
-                        estado_anterior = Cerrado
+                    if Cerrado != cerrado_anterior:
+                        cerrado_anterior = Cerrado
                         if Cerrado:
                             telegram_enviar("🔴 Cochera cerrada", TELEGRAM_CHAT_ID)
                         else:
