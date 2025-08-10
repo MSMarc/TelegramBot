@@ -845,9 +845,12 @@ async def detectar_presencia():
             return None
         presencia_actual = await hay_dispositivos_presentes()
         if not presencia_actual:
-            await asyncio.sleep(15)
+            await asyncio.sleep(20)
             presencia_actual = await hay_dispositivos_presentes()
-        if router_ok and TELEGRAM_CHAT_ID is not None and presencia_anterior is not None:
+        if not presencia_actual:
+            await asyncio.sleep(20)
+            presencia_actual = await hay_dispositivos_presentes()
+        if router_ok and presencia_anterior is not None:
             if presencia_anterior and not presencia_actual:
                 telegram_enviar("🏠 Home auto ha detectado casa vacía.", TELEGRAM_CHAT_ID)
             elif not presencia_anterior and presencia_actual:
@@ -1023,6 +1026,7 @@ async def mqtt_escuchar():
                             telegram_enviar("🔴 Cochera cerrada", TELEGRAM_CHAT_ID)
                         else:
                             telegram_enviar("🟢 Cochera abierta", TELEGRAM_CHAT_ID)
+                            requests.post(f"http://localhost:8123/api/webhook/grabar_terrassa")
                 except Exception as e:
                     print(f"Error parseando MQTT: {e}")
     except Exception as e:
