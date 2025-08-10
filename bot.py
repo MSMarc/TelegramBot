@@ -634,19 +634,6 @@ async def telegram_recibir():
             print("🛜 Posible perdida de conexión a internet:", e)
             await asyncio.sleep(10)
             continue
-        # except requests.exceptions.HTTPError as e:
-        #     if e.response.status_code == 409:
-        #         print("⚠️ Conflicto con webhook (409), eliminando webhook...")
-        #         try:
-        #             requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/deleteWebhook")
-        #         except Exception as e2:
-        #             print("❌ Error al eliminar webhook:", e2)
-        #         await asyncio.sleep(2)
-        #         continue
-        #     else:
-        #         print("❌ Error HTTP inesperado:", e)
-        #         await asyncio.sleep(10)
-        #         continue
         except Exception as e:
             print("❌ Error al recibir mensajes:", e)
         for _ in range(20):
@@ -1076,7 +1063,7 @@ async def monitor_cochera():
                     tiempo_abierta_actual = datetime.now() - tiempo_abierta
                     if not aviso_10min_hecho and tiempo_abierta_actual >= timedelta(minutes=10):
                         tiempo_str = formatear_tiempo(tiempo_abierta_actual)
-                        telegram_enviar(f"⏰ La cochera está abierta desde hace {tiempo_str}. Recuerda cerrarla.")
+                        telegram_enviar(f"⏰ La cochera está abierta desde hace {tiempo_str}. Recuerda cerrarla.", TELEGRAM_CHAT_ID)
                         aviso_10min_hecho = True
                         ultimo_aviso = datetime.now()
                     elif aviso_10min_hecho:
@@ -1085,7 +1072,7 @@ async def monitor_cochera():
                         tiempo_desde_ultimo_aviso = datetime.now() - ultimo_aviso
                         if tiempo_desde_ultimo_aviso >= timedelta(minutes=30):
                             tiempo_str = formatear_tiempo(tiempo_abierta_actual)
-                            telegram_enviar(f"⏰ La cochera sigue abierta desde hace {tiempo_str}. Por favor, recuerda cerrarla.")
+                            telegram_enviar(f"⏰ La cochera sigue abierta desde hace {tiempo_str}. Por favor, recuerda cerrarla.", TELEGRAM_CHAT_ID)
                             ultimo_aviso = datetime.now()
             else:
                 tiempo_abierta = None
