@@ -873,6 +873,7 @@ async def vigilar_movimiento():
                         continue
                     nuevo_hash = hash(video_bytes)
                     if ULTIMOS_CLIPS.get(nombre) == nuevo_hash:
+                        print("📹 Video repetido ignorado")
                         continue
                     if len(ULTIMOS_CLIPS) >= 10:
                         ULTIMOS_CLIPS.popitem(last=False)
@@ -1023,9 +1024,9 @@ async def mqtt_escuchar():
                     if Cerrado != cerrado_anterior:
                         cerrado_anterior = Cerrado
                         if Cerrado:
-                            telegram_enviar("🔴 Cochera cerrada", TELEGRAM_CHAT_ID)
+                            telegram_enviar("🔴 Cochera cerrada", selected_chat)
                         else:
-                            telegram_enviar("🟢 Cochera abierta", TELEGRAM_CHAT_ID)
+                            telegram_enviar("🟢 Cochera abierta", selected_chat)
                             requests.post(f"http://localhost:8123/api/webhook/grabar_terrassa")
                 except Exception as e:
                     print(f"Error parseando MQTT: {e}")
@@ -1067,7 +1068,7 @@ async def monitor_cochera():
                     tiempo_abierta_actual = datetime.now() - tiempo_abierta
                     if not aviso_10min_hecho and tiempo_abierta_actual >= timedelta(minutes=10):
                         tiempo_str = formatear_tiempo(tiempo_abierta_actual)
-                        telegram_enviar(f"⏰ La cochera está abierta desde hace {tiempo_str}. Recuerda cerrarla.", TELEGRAM_CHAT_ID)
+                        telegram_enviar(f"⏰ La cochera está abierta desde hace {tiempo_str}. Recuerda cerrarla.", selected_chat)
                         aviso_10min_hecho = True
                         ultimo_aviso = datetime.now()
                     elif aviso_10min_hecho:
@@ -1076,7 +1077,7 @@ async def monitor_cochera():
                         tiempo_desde_ultimo_aviso = datetime.now() - ultimo_aviso
                         if tiempo_desde_ultimo_aviso >= timedelta(minutes=30):
                             tiempo_str = formatear_tiempo(tiempo_abierta_actual)
-                            telegram_enviar(f"⏰ La cochera sigue abierta desde hace {tiempo_str}. Por favor, recuerda cerrarla.", TELEGRAM_CHAT_ID)
+                            telegram_enviar(f"⏰ La cochera sigue abierta desde hace {tiempo_str}. Por favor, recuerda cerrarla.", selected_chat)
                             ultimo_aviso = datetime.now()
             else:
                 tiempo_abierta = None
