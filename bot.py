@@ -182,7 +182,7 @@ modo_terminal_por_chat = {}
 temporizadores_terminal = {}
 
 async def cerrar_terminal_por_inactividad(chat_id):
-    await asyncio.sleep(300)
+    await asyncio.sleep(300)  # 5 minutos
     if modo_terminal_por_chat.get(chat_id):
         await cerrar_terminal(chat_id)
         telegram_enviar("⏳ Terminal cerrada automáticamente por inactividad (5 min).", chat_id)
@@ -218,29 +218,45 @@ async def comando_terminal(user_id, chat_id):
     terminales_activas[chat_id] = proc
     modo_terminal_por_chat[chat_id] = True
     telegram_enviar("💻 Terminal abierta. Escribe comandos como si estuvieras en Debian. Usa /terminal para cerrar.", chat_id)
+
     async def leer_salida():
+        buffer = ""
         while True:
             linea = await proc.stdout.readline()
             if not linea:
                 break
-            salida = linea.decode(errors="ignore").rstrip()
-            if salida:
-                telegram_enviar(f"```\n{salida}\n```", chat_id)
+            buffer += linea.decode(errors="ignore")
+            if len(buffer) > 3500 or buffer.endswith("\n"):
+                enviar_salida_terminal(buffer.rstrip(), chat_id)
+                buffer = ""
+                reiniciar_temporizador(chat_id)
+        if buffer:
+            enviar_salida_terminal(buffer.rstrip(), chat_id)
     lectores_terminal[chat_id] = asyncio.create_task(leer_salida())
     temporizadores_terminal[chat_id] = asyncio.create_task(cerrar_terminal_por_inactividad(chat_id))
 
+def enviar_salida_terminal(salida, chat_id):
+    salida = salida.replace("```", "`\u200b``")  
+    salida = re.sub(r"([_*\[\]()~`>#+\-=|{}.!])", r"\\\1", salida)
+    max_len = 4000
+    for i in range(0, len(salida), max_len):
+        parte = salida[i:i+max_len]
+        telegram_enviar(f"```\n{parte}\n```", chat_id)
+
+def reiniciar_temporizador(chat_id):
+    if chat_id in temporizadores_terminal:
+        temporizadores_terminal[chat_id].cancel()
+    temporizadores_terminal[chat_id] = asyncio.create_task(cerrar_terminal_por_inactividad(chat_id))
+
 async def manejar_terminal(texto, chat_id):
-    texto = texto.strip()
-    texto = texto.replace("@MarcMS_Bot", "")
+    texto = texto.strip().replace("@MarcMS_Bot", "")
     if texto.lower() == "/terminal":
         await comando_terminal(None, chat_id)
         return
     if not modo_terminal_por_chat.get(chat_id):
         telegram_enviar("❌ No hay terminal abierta. Usa /terminal para iniciar.", chat_id)
         return
-    if chat_id in temporizadores_terminal:
-        temporizadores_terminal[chat_id].cancel()
-    temporizadores_terminal[chat_id] = asyncio.create_task(cerrar_terminal_por_inactividad(chat_id))
+    reiniciar_temporizador(chat_id)
     proc = terminales_activas[chat_id]
     try:
         proc.stdin.write((texto + "\n").encode())
@@ -633,7 +649,7 @@ async def comando_terminal(user_id, chat_id):
     modo = modo_terminal_por_chat.get(chat_id, False)
     if not modo:
         modo_terminal_por_chat[chat_id] = True
-        telegram_enviar("🖥️ Terminal activada. Modo simple, un comando por terminal.", chat_id)
+        telegram_enviar("🖥️ Terminal activada.", chat_id)
         if chat_id in temporizadores_terminal:
             temporizadores_terminal[chat_id].cancel()
         tarea = asyncio.create_task(cerrar_terminal_por_inactividad(chat_id))
