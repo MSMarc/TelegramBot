@@ -179,7 +179,7 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
 import asyncio
 import re
 
-MAX_TELEGRAM_LEN = 4000
+MAX_TELEGRAM_LEN = 3500
 PROMPT_FLAG = "__END_OF_CMD__"
 COMANDOS_CONTINUOS = ["-f", "tail", "watch", "ping"]
 terminales_activas = {}
@@ -237,37 +237,33 @@ async def comando_terminal(user_id, chat_id):
     terminales_activas[chat_id] = proc
     modo_terminal_por_chat[chat_id] = True
     telegram_enviar("🖥️ Terminal activada.", chat_id)
-    async def leer_salida():
+    async def leer_salida(chat_id, proc):
         buffer = ""
-        comando_en_curso = False
-        continuo = False
+        ultima_linea = asyncio.get_event_loop().time()
+        sin_salida_en_cmd = False
         while True:
             try:
-                linea = await proc.stdout.readline()
-            except Exception:
-                break
+                linea = await asyncio.wait_for(proc.stdout.readline(), timeout=0.3)
+            except asyncio.TimeoutError:
+                ahora = asyncio.get_event_loop().time()
+                if buffer:
+                    enviar_salida_terminal(buffer.rstrip(), chat_id)
+                    buffer = ""
+                    sin_salida_en_cmd = False
+                elif (ahora - ultima_linea) > 0.5 and not sin_salida_en_cmd:
+                    telegram_enviar("✔️ Comando ejecutado (sin salida)", chat_id)
+                    sin_salida_en_cmd = True
+                continue
             if not linea:
                 break
-            texto = linea.decode(errors="ignore")
-            if not continuo:
-                if PROMPT_FLAG in texto:
-                    if buffer.strip():
-                        enviar_salida_terminal(buffer.rstrip(), chat_id)
-                    else:
-                        telegram_enviar("✔️ Comando ejecutado (sin salida)", chat_id)
-                    buffer = ""
-                    comando_en_curso = False
-                    continue
-                buffer += texto
-                if len(buffer) >= MAX_TELEGRAM_LEN:
-                    enviar_salida_terminal(buffer.rstrip(), chat_id)
-                    buffer = ""
-            else:
-                buffer += texto
-                if len(buffer) >= MAX_TELEGRAM_LEN:
-                    enviar_salida_terminal(buffer.rstrip(), chat_id)
-                    buffer = ""
-        if buffer.strip():
+            parte = linea.decode(errors="ignore")
+            ultima_linea = asyncio.get_event_loop().time()
+            sin_salida_en_cmd = False
+            buffer += parte
+            if len(buffer) >= MAX_TELEGRAM_LEN:
+                enviar_salida_terminal(buffer.rstrip(), chat_id)
+                buffer = ""
+        if buffer:
             enviar_salida_terminal(buffer.rstrip(), chat_id)
     lectores_terminal[chat_id] = asyncio.create_task(leer_salida())
     temporizadores_terminal[chat_id] = asyncio.create_task(cerrar_terminal_por_inactividad(chat_id))
