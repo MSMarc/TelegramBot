@@ -190,7 +190,7 @@ def enviar_salida_terminal(salida, chat_id):
     salida = salida.replace(PROMPT_FLAG, "").rstrip()
     partes = [salida[i:i+MAX_TELEGRAM_LEN] for i in range(0, len(salida), MAX_TELEGRAM_LEN)]
     for parte in partes:
-        telegram_enviar(f"```\n{parte}\n```", chat_id)
+        telegram_enviar(f"```\n{parte}\n```", chat_id, parse_mode="MarkdownV2")
 
 async def cerrar_terminal_por_inactividad(chat_id):
     await asyncio.sleep(300)
@@ -709,13 +709,13 @@ async def telegram_recibir():
                 return
             await asyncio.sleep(0.1)
 
-def telegram_enviar(texto, chat_id=None):
+def telegram_enviar(texto, chat_id=None, parse_mode="Markdown"):
     texto=texto.replace("_","\\_")
     if chat_id is None:
         print("❌ chat_id no especificado en telegram_enviar")
         return None
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {"chat_id": chat_id, "text": texto, "parse_mode": "Markdown"}
+    data = {"chat_id": chat_id, "text": texto, "parse_mode": parse_mode}
     try:
         r = requests.post(url, data=data)
         r.raise_for_status()
