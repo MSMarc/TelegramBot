@@ -176,34 +176,77 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
     else:
         telegram_enviar("❌ Comando no soportado", chat_id)
 
-async def manejar_terminal(texto, chat_id):
-    texto = texto.strip()
-    texto = texto.replace("@MarcMS_Bot", "")    
-    if texto.lower() == "/terminal":
-        modo_terminal_por_chat[chat_id] = False
-        if chat_id in temporizadores_terminal:
-            temporizadores_terminal[chat_id].cancel()
-            del temporizadores_terminal[chat_id]
-        telegram_enviar("🚪 Terminal cerrada por el usuario.", chat_id)
-        return
-    if chat_id in temporizadores_terminal:
-        temporizadores_terminal[chat_id].cancel()
-    tarea = asyncio.create_task(cerrar_terminal_por_inactividad(chat_id))
-    temporizadores_terminal[chat_id] = tarea    
-    try:
-        resultado = subprocess.run(texto, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10)
-        salida = resultado.stdout.strip() or resultado.stderr.strip() or "✅ Comando ejecutado (sin salida)"
-        if len(salida) > 4000:
-            salida = salida[:3990] + "\n... (salida recortada)"
-        telegram_enviar(f"```\n{salida}\n```", chat_id)
-    except Exception as e:
-        telegram_enviar(f"❌ Error ejecutando el comando: {e}", chat_id)
+terminales_activas = {}
+lectores_terminal = {}
+modo_terminal_por_chat = {}
+temporizadores_terminal = {}
 
 async def cerrar_terminal_por_inactividad(chat_id):
     await asyncio.sleep(300)
     if modo_terminal_por_chat.get(chat_id):
-        modo_terminal_por_chat[chat_id] = False
+        await cerrar_terminal(chat_id)
         telegram_enviar("⏳ Terminal cerrada automáticamente por inactividad (5 min).", chat_id)
+
+async def cerrar_terminal(chat_id):
+    if chat_id in terminales_activas:
+        proc = terminales_activas.pop(chat_id)
+        try:
+            proc.terminate()
+            await proc.wait()
+        except:
+            pass
+    if chat_id in lectores_terminal:
+        lectores_terminal[chat_id].cancel()
+        lectores_terminal.pop(chat_id, None)
+    if chat_id in temporizadores_terminal:
+        temporizadores_terminal[chat_id].cancel()
+        temporizadores_terminal.pop(chat_id, None)
+    modo_terminal_por_chat[chat_id] = False
+
+async def comando_terminal(user_id, chat_id):
+    """Abre o cierra la terminal interactiva"""
+    if modo_terminal_por_chat.get(chat_id):
+        await cerrar_terminal(chat_id)
+        telegram_enviar("🚪 Terminal cerrada.", chat_id)
+        return
+    proc = await asyncio.create_subprocess_exec(
+        "/bin/bash",
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT
+    )
+    terminales_activas[chat_id] = proc
+    modo_terminal_por_chat[chat_id] = True
+    telegram_enviar("💻 Terminal abierta. Escribe comandos como si estuvieras en Debian. Usa /terminal para cerrar.", chat_id)
+    async def leer_salida():
+        while True:
+            linea = await proc.stdout.readline()
+            if not linea:
+                break
+            salida = linea.decode(errors="ignore").rstrip()
+            if salida:
+                telegram_enviar(f"```\n{salida}\n```", chat_id)
+    lectores_terminal[chat_id] = asyncio.create_task(leer_salida())
+    temporizadores_terminal[chat_id] = asyncio.create_task(cerrar_terminal_por_inactividad(chat_id))
+
+async def manejar_terminal(texto, chat_id):
+    texto = texto.strip()
+    texto = texto.replace("@MarcMS_Bot", "")
+    if texto.lower() == "/terminal":
+        await comando_terminal(None, chat_id)
+        return
+    if not modo_terminal_por_chat.get(chat_id):
+        telegram_enviar("❌ No hay terminal abierta. Usa /terminal para iniciar.", chat_id)
+        return
+    if chat_id in temporizadores_terminal:
+        temporizadores_terminal[chat_id].cancel()
+    temporizadores_terminal[chat_id] = asyncio.create_task(cerrar_terminal_por_inactividad(chat_id))
+    proc = terminales_activas[chat_id]
+    try:
+        proc.stdin.write((texto + "\n").encode())
+        await proc.stdin.drain()
+    except Exception as e:
+        telegram_enviar(f"❌ Error enviando comando: {e}", chat_id)
 
 async def comando_list(chat_id):
     dispositivos = []
