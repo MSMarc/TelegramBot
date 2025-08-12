@@ -175,7 +175,7 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
         await comando_terminal(user_id, chat_id)
     else:
         telegram_enviar("❌ Comando no soportado", chat_id)
-
+        
 terminales_activas = {}
 lectores_terminal = {}
 modo_terminal_por_chat = {}
@@ -204,7 +204,9 @@ async def cerrar_terminal(chat_id):
     modo_terminal_por_chat[chat_id] = False
 
 async def comando_terminal(user_id, chat_id):
-    """Abre o cierra la terminal interactiva"""
+    if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
+        telegram_enviar("⛔ Solo el administrador puede usar /terminal", chat_id)
+        return
     if modo_terminal_por_chat.get(chat_id):
         await cerrar_terminal(chat_id)
         telegram_enviar("🚪 Terminal cerrada.", chat_id)
@@ -217,8 +219,7 @@ async def comando_terminal(user_id, chat_id):
     )
     terminales_activas[chat_id] = proc
     modo_terminal_por_chat[chat_id] = True
-    telegram_enviar("💻 Terminal abierta. Escribe comandos como si estuvieras en Debian. Usa /terminal para cerrar.", chat_id)
-
+    telegram_enviar("🖥️ Terminal activada.", chat_id)
     async def leer_salida():
         buffer = ""
         while True:
@@ -232,11 +233,12 @@ async def comando_terminal(user_id, chat_id):
                 reiniciar_temporizador(chat_id)
         if buffer:
             enviar_salida_terminal(buffer.rstrip(), chat_id)
+
     lectores_terminal[chat_id] = asyncio.create_task(leer_salida())
     temporizadores_terminal[chat_id] = asyncio.create_task(cerrar_terminal_por_inactividad(chat_id))
 
 def enviar_salida_terminal(salida, chat_id):
-    salida = salida.replace("```", "`\u200b``")  
+    salida = salida.replace("```", "`\u200b``")
     salida = re.sub(r"([_*\[\]()~`>#+\-=|{}.!])", r"\\\1", salida)
     max_len = 4000
     for i in range(0, len(salida), max_len):
@@ -263,6 +265,53 @@ async def manejar_terminal(texto, chat_id):
         await proc.stdin.drain()
     except Exception as e:
         telegram_enviar(f"❌ Error enviando comando: {e}", chat_id)
+
+async def telegram_recibir():
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates"
+    last_update = 0
+    try:
+        r = requests.get(url)
+        r.raise_for_status()
+        data = r.json()
+        updates = data.get("result", [])
+        if updates:
+            last_update = max(update["update_id"] for update in updates)
+            requests.get(url, params={"offset": last_update + 1})
+    except Exception as e:
+        print("❌ Error limpiando updates antiguos:", e)
+    while not APAGAR_BOT.is_set():
+        try:
+            r = requests.get(url, params={"offset": last_update + 1}, timeout=5)
+            r.raise_for_status()
+            data = r.json()
+            for result in data.get("result", []):
+                last_update = result["update_id"]
+                mensaje = result.get("message")
+                if not mensaje:
+                    continue  # ignorar updates sin mensaje
+
+                texto = mensaje.get("text")
+                if texto is None:
+                    continue  # ignorar mensajes no textuales
+
+                mid = mensaje.get("message_id")
+                chat_id = mensaje.get("chat", {}).get("id")
+                user_id = mensaje.get("from", {}).get("id")
+
+                if modo_terminal_por_chat.get(chat_id, False):
+                    await manejar_terminal(texto, chat_id)
+                else:
+                    await manejar_comando(texto, mid, chat_id, user_id)
+        except requests.exceptions.RequestException as e:
+            print("🛜 Posible perdida de conexión a internet:", e)
+            await asyncio.sleep(10)
+            continue
+        except Exception as e:
+            print("❌ Error al recibir mensajes:", repr(e))
+        for _ in range(20):
+            if APAGAR_BOT.is_set():
+                return
+            await asyncio.sleep(0.1)
 
 async def comando_list(chat_id):
     dispositivos = []
@@ -641,21 +690,6 @@ def comando_id(texto, user_id, chat_id):
             telegram_enviar("❌ Opción inválida. Usa /id 1 o /id 2", chat_id)
     except IndexError:
         telegram_enviar("❌ Formato incorrecto. Usa /id 1 o /id 2", chat_id)
-
-async def comando_terminal(user_id, chat_id):
-    if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
-        telegram_enviar("⛔ Solo el administrador puede usar /terminal", chat_id)
-        return
-    modo = modo_terminal_por_chat.get(chat_id, False)
-    if not modo:
-        modo_terminal_por_chat[chat_id] = True
-        telegram_enviar("🖥️ Terminal activada.", chat_id)
-        if chat_id in temporizadores_terminal:
-            temporizadores_terminal[chat_id].cancel()
-        tarea = asyncio.create_task(cerrar_terminal_por_inactividad(chat_id))
-        temporizadores_terminal[chat_id] = tarea
-    else:
-        telegram_enviar("❌ Ya estás en modo terminal. Usa /terminal otra vez para salir.", chat_id)
 
 #Gestionar telegram
 
