@@ -265,13 +265,13 @@ async def comando_terminal(user_id, chat_id):
                 buffer = ""
         if buffer:
             enviar_salida_terminal(buffer.rstrip(), chat_id)
-    lectores_terminal[chat_id] = asyncio.create_task(leer_salida())
+    lectores_terminal[chat_id] = asyncio.create_task(leer_salida(chat_id, proc))
     temporizadores_terminal[chat_id] = asyncio.create_task(cerrar_terminal_por_inactividad(chat_id))
 
-async def manejar_terminal(texto, chat_id):
+async def manejar_terminal(texto, chat_id, user_id):
     texto = texto.strip().replace("@MarcMS_Bot", "")
     if texto.lower() == "/terminal":
-        await comando_terminal(None, chat_id)
+        await comando_terminal(user_id, chat_id)
         return
     if not modo_terminal_por_chat.get(chat_id):
         telegram_enviar("❌ No hay terminal abierta. Usa /terminal para iniciar.", chat_id)
@@ -695,7 +695,7 @@ async def telegram_recibir():
                     chat_id = mensaje.get("chat", {}).get("id")
                     user_id = mensaje.get("from", {}).get("id")
                     if modo_terminal_por_chat.get(chat_id, False):
-                        await manejar_terminal(texto, chat_id)
+                        await manejar_terminal(texto, chat_id, user_id)
                     else:
                         await manejar_comando(texto, mid, chat_id, user_id)
         except requests.exceptions.RequestException as e:
