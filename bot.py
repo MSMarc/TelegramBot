@@ -176,13 +176,25 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
     else:
         telegram_enviar("❌ Comando no soportado", chat_id)
 
+import asyncio
+import re
+
+MAX_TELEGRAM_LEN = 4000
+PROMPT_FLAG = "__END_OF_CMD__"
+COMANDOS_CONTINUOS = ["-f", "tail", "watch", "ping"]
 terminales_activas = {}
 lectores_terminal = {}
 modo_terminal_por_chat = {}
 temporizadores_terminal = {}
 
+def enviar_salida_terminal(salida, chat_id):
+    salida = re.sub(r"([_*\[\]()~`>#+\-=|{}.!])", r"\\\1", salida)
+    partes = [salida[i:i+MAX_TELEGRAM_LEN] for i in range(0, len(salida), MAX_TELEGRAM_LEN)]
+    for parte in partes:
+        telegram_enviar(f"```\n{parte}\n```", chat_id)
+
 async def cerrar_terminal_por_inactividad(chat_id):
-    await asyncio.sleep(300)  # 5 minutos
+    await asyncio.sleep(300)
     if modo_terminal_por_chat.get(chat_id):
         await cerrar_terminal(chat_id)
         telegram_enviar("⏳ Terminal cerrada automáticamente por inactividad (5 min).", chat_id)
@@ -203,6 +215,11 @@ async def cerrar_terminal(chat_id):
         temporizadores_terminal.pop(chat_id, None)
     modo_terminal_por_chat[chat_id] = False
 
+def reiniciar_temporizador(chat_id):
+    if chat_id in temporizadores_terminal:
+        temporizadores_terminal[chat_id].cancel()
+    temporizadores_terminal[chat_id] = asyncio.create_task(cerrar_terminal_por_inactividad(chat_id))
+
 async def comando_terminal(user_id, chat_id):
     if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
         telegram_enviar("⛔ Solo el administrador puede usar /terminal", chat_id)
@@ -222,42 +239,37 @@ async def comando_terminal(user_id, chat_id):
     telegram_enviar("🖥️ Terminal activada.", chat_id)
     async def leer_salida():
         buffer = ""
-        ultima_salida = asyncio.get_event_loop().time()
+        comando_en_curso = False
+        continuo = False
         while True:
             try:
-                linea = await asyncio.wait_for(proc.stdout.readline(), timeout=0.3)
-            except asyncio.TimeoutError:
-                if buffer:
-                    enviar_salida_terminal(buffer.rstrip(), chat_id)
-                    buffer = ""
-                elif (asyncio.get_event_loop().time() - ultima_salida) > 0.3:
-                    pass
-                continue
+                linea = await proc.stdout.readline()
+            except Exception:
+                break
             if not linea:
                 break
-            buffer += linea.decode(errors="ignore")
-            ultima_salida = asyncio.get_event_loop().time()
-            if len(buffer) > 3500:
-                enviar_salida_terminal(buffer.rstrip(), chat_id)
-                buffer = ""
-        if buffer:
+            texto = linea.decode(errors="ignore")
+            if not continuo:
+                if PROMPT_FLAG in texto:
+                    if buffer.strip():
+                        enviar_salida_terminal(buffer.rstrip(), chat_id)
+                    else:
+                        telegram_enviar("✔️ Comando ejecutado (sin salida)", chat_id)
+                    buffer = ""
+                    comando_en_curso = False
+                    continue
+                buffer += texto
+                if len(buffer) >= MAX_TELEGRAM_LEN:
+                    enviar_salida_terminal(buffer.rstrip(), chat_id)
+                    buffer = ""
+            else:
+                buffer += texto
+                if len(buffer) >= MAX_TELEGRAM_LEN:
+                    enviar_salida_terminal(buffer.rstrip(), chat_id)
+                    buffer = ""
+        if buffer.strip():
             enviar_salida_terminal(buffer.rstrip(), chat_id)
-        else:
-            telegram_enviar("✔️ Comando ejecutado (sin salida)", chat_id)
     lectores_terminal[chat_id] = asyncio.create_task(leer_salida())
-    temporizadores_terminal[chat_id] = asyncio.create_task(cerrar_terminal_por_inactividad(chat_id))
-
-def enviar_salida_terminal(salida, chat_id):
-    salida = salida.replace("```", "`\u200b``")
-    salida = re.sub(r"([_*\[\]()~`>#+\-=|{}.!])", r"\\\1", salida)
-    max_len = 4000
-    for i in range(0, len(salida), max_len):
-        parte = salida[i:i+max_len]
-        telegram_enviar(f"```\n{parte}\n```", chat_id)
-
-def reiniciar_temporizador(chat_id):
-    if chat_id in temporizadores_terminal:
-        temporizadores_terminal[chat_id].cancel()
     temporizadores_terminal[chat_id] = asyncio.create_task(cerrar_terminal_por_inactividad(chat_id))
 
 async def manejar_terminal(texto, chat_id):
@@ -270,58 +282,15 @@ async def manejar_terminal(texto, chat_id):
         return
     reiniciar_temporizador(chat_id)
     proc = terminales_activas[chat_id]
+    if any(c in texto for c in COMANDOS_CONTINUOS):
+        comando = texto
+    else:
+        comando = f"{texto} ; echo {PROMPT_FLAG}"
     try:
-        proc.stdin.write((texto + "\n").encode())
+        proc.stdin.write((comando + "\n").encode())
         await proc.stdin.drain()
     except Exception as e:
         telegram_enviar(f"❌ Error enviando comando: {e}", chat_id)
-
-async def telegram_recibir():
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates"
-    last_update = 0
-    try:
-        r = requests.get(url)
-        r.raise_for_status()
-        data = r.json()
-        updates = data.get("result", [])
-        if updates:
-            last_update = max(update["update_id"] for update in updates)
-            requests.get(url, params={"offset": last_update + 1})
-    except Exception as e:
-        print("❌ Error limpiando updates antiguos:", e)
-    while not APAGAR_BOT.is_set():
-        try:
-            r = requests.get(url, params={"offset": last_update + 1}, timeout=5)
-            r.raise_for_status()
-            data = r.json()
-            for result in data.get("result", []):
-                last_update = result["update_id"]
-                mensaje = result.get("message")
-                if not mensaje:
-                    continue  # ignorar updates sin mensaje
-
-                texto = mensaje.get("text")
-                if texto is None:
-                    continue  # ignorar mensajes no textuales
-
-                mid = mensaje.get("message_id")
-                chat_id = mensaje.get("chat", {}).get("id")
-                user_id = mensaje.get("from", {}).get("id")
-
-                if modo_terminal_por_chat.get(chat_id, False):
-                    await manejar_terminal(texto, chat_id)
-                else:
-                    await manejar_comando(texto, mid, chat_id, user_id)
-        except requests.exceptions.RequestException as e:
-            print("🛜 Posible perdida de conexión a internet:", e)
-            await asyncio.sleep(10)
-            continue
-        except Exception as e:
-            print("❌ Error al recibir mensajes:", repr(e))
-        for _ in range(20):
-            if APAGAR_BOT.is_set():
-                return
-            await asyncio.sleep(0.1)
 
 async def comando_list(chat_id):
     dispositivos = []
