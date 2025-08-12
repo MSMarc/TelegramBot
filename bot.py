@@ -176,19 +176,18 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
     else:
         telegram_enviar("❌ Comando no soportado", chat_id)
 
-import asyncio
-import re
 
 MAX_TELEGRAM_LEN = 3500
 PROMPT_FLAG = "__END_OF_CMD__"
-COMANDOS_CONTINUOS = ["-f", "tail", "watch", "ping"]
+COMANDOS_CONTINUOS = ["-f", "tail", "watch", "ping", "mosquitto_sub"]
 terminales_activas = {}
 lectores_terminal = {}
 modo_terminal_por_chat = {}
 temporizadores_terminal = {}
+comando_en_ejecucion = {}
 
 def enviar_salida_terminal(salida, chat_id):
-    salida = re.sub(r"([_*\[\]()~`>#+\-=|{}.!])", r"\\\1", salida)
+    salida = salida.replace(PROMPT_FLAG, "").rstrip()
     partes = [salida[i:i+MAX_TELEGRAM_LEN] for i in range(0, len(salida), MAX_TELEGRAM_LEN)]
     for parte in partes:
         telegram_enviar(f"```\n{parte}\n```", chat_id)
@@ -213,6 +212,7 @@ async def cerrar_terminal(chat_id):
     if chat_id in temporizadores_terminal:
         temporizadores_terminal[chat_id].cancel()
         temporizadores_terminal.pop(chat_id, None)
+    comando_en_ejecucion.pop(chat_id, None)
     modo_terminal_por_chat[chat_id] = False
 
 def reiniciar_temporizador(chat_id):
@@ -236,35 +236,33 @@ async def comando_terminal(user_id, chat_id):
     )
     terminales_activas[chat_id] = proc
     modo_terminal_por_chat[chat_id] = True
+    comando_en_ejecucion[chat_id] = None
     telegram_enviar("🖥️ Terminal activada.", chat_id)
     async def leer_salida(chat_id, proc):
         buffer = ""
-        ultima_linea = asyncio.get_event_loop().time()
-        sin_salida_en_cmd = False
         while True:
             try:
                 linea = await asyncio.wait_for(proc.stdout.readline(), timeout=0.3)
             except asyncio.TimeoutError:
-                ahora = asyncio.get_event_loop().time()
                 if buffer:
-                    enviar_salida_terminal(buffer.rstrip(), chat_id)
+                    enviar_salida_terminal(buffer, chat_id)
                     buffer = ""
-                    sin_salida_en_cmd = False
-                elif (ahora - ultima_linea) > 0.5 and not sin_salida_en_cmd:
-                    telegram_enviar("✔️ Comando ejecutado (sin salida)", chat_id)
-                    sin_salida_en_cmd = True
                 continue
             if not linea:
                 break
             parte = linea.decode(errors="ignore")
-            ultima_linea = asyncio.get_event_loop().time()
-            sin_salida_en_cmd = False
             buffer += parte
+            if PROMPT_FLAG in buffer and not comando_en_ejecucion.get(chat_id, False):
+                enviar_salida_terminal(buffer, chat_id)
+                buffer = ""
+                comando_en_ejecucion[chat_id] = None
+            elif comando_en_ejecucion.get(chat_id, False):
+                enviar_salida_terminal(parte, chat_id)
             if len(buffer) >= MAX_TELEGRAM_LEN:
-                enviar_salida_terminal(buffer.rstrip(), chat_id)
+                enviar_salida_terminal(buffer, chat_id)
                 buffer = ""
         if buffer:
-            enviar_salida_terminal(buffer.rstrip(), chat_id)
+            enviar_salida_terminal(buffer, chat_id)
     lectores_terminal[chat_id] = asyncio.create_task(leer_salida(chat_id, proc))
     temporizadores_terminal[chat_id] = asyncio.create_task(cerrar_terminal_por_inactividad(chat_id))
 
@@ -279,8 +277,10 @@ async def manejar_terminal(texto, chat_id, user_id):
     reiniciar_temporizador(chat_id)
     proc = terminales_activas[chat_id]
     if any(c in texto for c in COMANDOS_CONTINUOS):
+        comando_en_ejecucion[chat_id] = True
         comando = texto
     else:
+        comando_en_ejecucion[chat_id] = False
         comando = f"{texto} ; echo {PROMPT_FLAG}"
     try:
         proc.stdin.write((comando + "\n").encode())
