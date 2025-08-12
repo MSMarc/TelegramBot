@@ -175,7 +175,7 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
         await comando_terminal(user_id, chat_id)
     else:
         telegram_enviar("❌ Comando no soportado", chat_id)
-        
+
 terminales_activas = {}
 lectores_terminal = {}
 modo_terminal_por_chat = {}
@@ -222,18 +222,28 @@ async def comando_terminal(user_id, chat_id):
     telegram_enviar("🖥️ Terminal activada.", chat_id)
     async def leer_salida():
         buffer = ""
+        ultima_salida = asyncio.get_event_loop().time()
         while True:
-            linea = await proc.stdout.readline()
+            try:
+                linea = await asyncio.wait_for(proc.stdout.readline(), timeout=0.3)
+            except asyncio.TimeoutError:
+                if buffer:
+                    enviar_salida_terminal(buffer.rstrip(), chat_id)
+                    buffer = ""
+                elif (asyncio.get_event_loop().time() - ultima_salida) > 0.3:
+                    pass
+                continue
             if not linea:
                 break
             buffer += linea.decode(errors="ignore")
-            if len(buffer) > 3500 or buffer.endswith("\n"):
+            ultima_salida = asyncio.get_event_loop().time()
+            if len(buffer) > 3500:
                 enviar_salida_terminal(buffer.rstrip(), chat_id)
                 buffer = ""
-                reiniciar_temporizador(chat_id)
         if buffer:
             enviar_salida_terminal(buffer.rstrip(), chat_id)
-
+        else:
+            telegram_enviar("✔️ Comando ejecutado (sin salida)", chat_id)
     lectores_terminal[chat_id] = asyncio.create_task(leer_salida())
     temporizadores_terminal[chat_id] = asyncio.create_task(cerrar_terminal_por_inactividad(chat_id))
 
