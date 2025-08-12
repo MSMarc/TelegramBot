@@ -873,7 +873,6 @@ async def vigilar_movimiento():
                         continue
                     nuevo_hash = hash(video_bytes)
                     if ULTIMOS_CLIPS.get(nombre) == nuevo_hash:
-                        print("📹 Video repetido ignorado")
                         continue
                     if len(ULTIMOS_CLIPS) >= 10:
                         ULTIMOS_CLIPS.popitem(last=False)
