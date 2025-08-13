@@ -15,6 +15,7 @@ from datetime import time
 from collections import OrderedDict
 import subprocess
 from aiomqtt import Client
+import signal
 
 load_dotenv()
 
@@ -188,6 +189,9 @@ comando_en_ejecucion = {}
 
 def enviar_salida_terminal(salida, chat_id):
     salida = salida.replace(PROMPT_FLAG, "").rstrip()
+    if not salida.strip():
+        telegram_enviar("✅ Comando ejecutado, sin salida.", chat_id)
+        return
     partes = [salida[i:i+MAX_TELEGRAM_LEN] for i in range(0, len(salida), MAX_TELEGRAM_LEN)]
     for parte in partes:
         telegram_enviar(f"```\n{parte}\n```", chat_id, parse_mode="MarkdownV2")
@@ -202,7 +206,7 @@ async def cerrar_terminal(chat_id):
     if chat_id in terminales_activas:
         proc = terminales_activas.pop(chat_id)
         try:
-            proc.terminate()
+            os.killpg(proc.pid, signal.SIGTERM)
             await proc.wait()
         except:
             pass
@@ -232,7 +236,8 @@ async def comando_terminal(user_id, chat_id):
         "/bin/bash",
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT
+        stderr=asyncio.subprocess.STDOUT,
+        preexec_fn=os.setsid
     )
     terminales_activas[chat_id] = proc
     modo_terminal_por_chat[chat_id] = True
@@ -251,13 +256,14 @@ async def comando_terminal(user_id, chat_id):
             if not linea:
                 break
             parte = linea.decode(errors="ignore")
-            buffer += parte
-            if PROMPT_FLAG in buffer and not comando_en_ejecucion.get(chat_id, False):
-                enviar_salida_terminal(buffer, chat_id)
-                buffer = ""
-                comando_en_ejecucion[chat_id] = None
-            elif comando_en_ejecucion.get(chat_id, False):
+            if comando_en_ejecucion.get(chat_id, False):
                 enviar_salida_terminal(parte, chat_id)
+            else:
+                buffer += parte
+                if PROMPT_FLAG in buffer:
+                    enviar_salida_terminal(buffer, chat_id)
+                    buffer = ""
+                    comando_en_ejecucion[chat_id] = None
             if len(buffer) >= MAX_TELEGRAM_LEN:
                 enviar_salida_terminal(buffer, chat_id)
                 buffer = ""
@@ -835,7 +841,7 @@ async def activar_blink(chat_id):
         if not sync_module.arm:
             await sync_module.async_arm(True)
             telegram_enviar(f"🔒 Blink armado", chat_id)
-            await asyncio.sleep(CHECK_INTERVAL)
+            await asyncio.sleep(CHECK_INTERVAL*2)
     except Exception as e:
         telegram_enviar(f"❌ Error activando Blink: {e}", chat_id)
 
@@ -848,7 +854,7 @@ async def desactivar_blink(chat_id):
         if sync_module.arm:
             await sync_module.async_arm(False)
             telegram_enviar(f"🔓 Blink desarmado", chat_id)
-            await asyncio.sleep(CHECK_INTERVAL)
+            await asyncio.sleep(CHECK_INTERVAL*2)
     except Exception as e:
         telegram_enviar(f"❌ Error desactivando Blink: {e}", chat_id)
 
