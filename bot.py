@@ -200,7 +200,7 @@ async def cerrar_terminal_por_inactividad(chat_id):
     await asyncio.sleep(300)
     if modo_terminal_por_chat.get(chat_id):
         await cerrar_terminal(chat_id)
-        telegram_enviar("⏳ Terminal cerrada automáticamente por inactividad (5 min).", chat_id)
+        telegram_enviar("⏳ Terminal cerrada automáticamente por inactividad.", chat_id)
 
 async def cerrar_terminal(chat_id):
     if chat_id in terminales_activas:
@@ -1127,7 +1127,7 @@ def formatear_tiempo(duracion):
 async def monitor_cochera():
     global Cerrado
     tiempo_abierta = None
-    aviso_10min_hecho = False
+    aviso_15min_hecho = False
     ultimo_aviso = None
     while True:
         try:
@@ -1135,16 +1135,16 @@ async def monitor_cochera():
                 await comando_cochera_update()
                 if tiempo_abierta is None:
                     tiempo_abierta = datetime.now()
-                    aviso_10min_hecho = False
+                    aviso_15min_hecho = False
                     ultimo_aviso = None
                 else:
                     tiempo_abierta_actual = datetime.now() - tiempo_abierta
-                    if not aviso_10min_hecho and tiempo_abierta_actual >= timedelta(minutes=10):
+                    if not aviso_15min_hecho and tiempo_abierta_actual >= timedelta(minutes=15):
                         tiempo_str = formatear_tiempo(tiempo_abierta_actual)
                         telegram_enviar(f"⏰ La cochera está abierta desde hace {tiempo_str}. Recuerda cerrarla.", selected_chat)
-                        aviso_10min_hecho = True
+                        aviso_15min_hecho = True
                         ultimo_aviso = datetime.now()
-                    elif aviso_10min_hecho:
+                    elif aviso_15min_hecho:
                         if ultimo_aviso is None:
                             ultimo_aviso = datetime.now()
                         tiempo_desde_ultimo_aviso = datetime.now() - ultimo_aviso
@@ -1154,7 +1154,7 @@ async def monitor_cochera():
                             ultimo_aviso = datetime.now()
             else:
                 tiempo_abierta = None
-                aviso_10min_hecho = False
+                aviso_15min_hecho = False
                 ultimo_aviso = None
         except Exception as e:
             print(f"❌ Error en monitor_cochera: {e}")
