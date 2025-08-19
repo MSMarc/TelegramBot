@@ -126,6 +126,7 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
             "📹 /rec – Video actual de una cámara\n"
             "⏰ /nocturno – Permite cambiar el horario nocturno\n"
             "🚪 /abrir – Abre la puerta principal de casa\n"
+            "🍗 /horno true|false|status - Cambia o muestra el horno\n"
         )
         telegram_enviar(ayuda, chat_id)
     elif texto == "/refresh":
@@ -170,6 +171,8 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
     elif texto == "/car":
         requests.post("http://localhost:8123/api/webhook/obrir-tanca")
         requests.post("http://localhost:8123/api/webhook/obrir-cotxera")
+    elif texto.startswith("/id"):
+        comando_horno(texto, chat_id)
     elif texto.startswith("/id"):
         comando_id(texto, user_id, chat_id)
     elif texto == "/terminal":
@@ -671,6 +674,21 @@ def comando_id(texto, user_id, chat_id):
             telegram_enviar("❌ Opción inválida. Usa /id 1 o /id 2", chat_id)
     except IndexError:
         telegram_enviar("❌ Formato incorrecto. Usa /id 1 o /id 2", chat_id)
+
+def comando_horno(texto, chat_id):
+    partes = texto.split()
+    if len(partes) == 2 and partes[1] in ["status", "true", "false"]:
+        accion = partes[1]
+        if accion == "true":
+            requests.post("http://localhost:8123/api/webhook/encender-horno")
+        elif accion == "false":
+            requests.post("http://localhost:8123/api/webhook/apagar-horno")
+        else:
+            requests.post("http://localhost:8123/api/webhook/estado-horno")
+    elif len(partes) == 1:
+        requests.post("http://localhost:8123/api/webhook/alternar-horno")
+    else:
+        telegram_enviar("❌ Opción inválida. Usa /horno true|false|status", chat_id)
 
 #Gestionar telegram
 
