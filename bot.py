@@ -126,7 +126,7 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
             "📹 /rec – Video actual de una cámara\n"
             "⏰ /nocturno – Permite cambiar el horario nocturno\n"
             "🚪 /abrir – Abre la puerta principal de casa\n"
-            "🍗 /horno true|false|status - Cambia o muestra el horno\n"
+            "🍗 /horno true|false|status – Cambia o muestra estado horno\n"
         )
         telegram_enviar(ayuda, chat_id)
     elif texto == "/refresh":
@@ -179,7 +179,6 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
         await comando_terminal(user_id, chat_id)
     else:
         telegram_enviar("❌ Comando no soportado", chat_id)
-
 
 MAX_TELEGRAM_LEN = 3500
 PROMPT_FLAG = "__END_OF_CMD__"
@@ -678,10 +677,9 @@ def comando_id(texto, user_id, chat_id):
 def comando_horno(texto, chat_id):
     partes = texto.split()
     if len(partes) == 2 and partes[1] in ["status", "true", "false"]:
-        accion = partes[1]
-        if accion == "true":
+        if partes[1] == "true":
             requests.post("http://localhost:8123/api/webhook/encender-horno")
-        elif accion == "false":
+        elif partes[1] == "false":
             requests.post("http://localhost:8123/api/webhook/apagar-horno")
         else:
             requests.post("http://localhost:8123/api/webhook/estado-horno")
