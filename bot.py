@@ -1100,29 +1100,29 @@ def actualizar_env():
 
 #MQTT
 
-async def mqtt_escuchar():
-    global Cerrado, cerrado_anterior
-    try:
-        async with Client("localhost", 1883, username="marc", password=MQTT_PASSWORD) as client:
-            await client.subscribe("shellyplus1-cotxera/status/input:0")
-            async for message in client.messages:
-                payload = message.payload.decode()
-                try:
-                    data = json.loads(payload)
-                    Cerrado = data.get("state", None)
-                    if Cerrado != cerrado_anterior:
-                        cerrado_anterior = Cerrado
-                        if Cerrado:
-                            telegram_enviar("🔴 Cochera cerrada", selected_chat)
-                        else:
-                            telegram_enviar("🟢 Cochera abierta", selected_chat)
-                            requests.post(f"http://localhost:8123/api/webhook/grabar_terrassa")
-                except Exception as e:
-                    print(f"Error parseando MQTT: {e}")
-    except Exception as e:
-        print(f"❌ Error al recibir MQTT: {e}")
-        await asyncio.sleep(10)
-        await mqtt_escuchar()
+# async def mqtt_escuchar_cochera():
+#     global Cerrado, cerrado_anterior
+#     try:
+#         async with Client("localhost", 1883, username="marc", password=MQTT_PASSWORD) as client:
+#             await client.subscribe("shellyplus1-cotxera/status/input:0")
+#             async for message in client.messages:
+#                 payload = message.payload.decode()
+#                 try:
+#                     data = json.loads(payload)
+#                     Cerrado = data.get("state", None)
+#                     if Cerrado != cerrado_anterior:
+#                         cerrado_anterior = Cerrado
+#                         if Cerrado:
+#                             telegram_enviar("🔴 Cochera cerrada", selected_chat)
+#                         else:
+#                             telegram_enviar("🟢 Cochera abierta", selected_chat)
+#                             requests.post(f"http://localhost:8123/api/webhook/grabar_terrassa")
+#                 except Exception as e:
+#                     print(f"Error parseando MQTT: {e}")
+#     except Exception as e:
+#         print(f"❌ Error al recibir MQTT: {e}")
+#         await asyncio.sleep(10)
+#         await mqtt_escuchar_cochera()
 
 async def comando_cochera_update():
     try:
@@ -1140,41 +1140,435 @@ def formatear_tiempo(duracion):
     else:
         return f"{minutos}min"
 
-async def monitor_cochera():
+# async def monitor_cochera():
+#     global Cerrado
+#     tiempo_abierta = None
+#     aviso_15min_hecho = False
+#     ultimo_aviso = None
+#     while True:
+#         try:
+#             if Cerrado is False:
+#                 await comando_cochera_update()
+#                 if tiempo_abierta is None:
+#                     tiempo_abierta = datetime.now()
+#                     aviso_15min_hecho = False
+#                     ultimo_aviso = None
+#                 else:
+#                     tiempo_abierta_actual = datetime.now() - tiempo_abierta
+#                     if not aviso_15min_hecho and tiempo_abierta_actual >= timedelta(minutes=15):
+#                         tiempo_str = formatear_tiempo(tiempo_abierta_actual)
+#                         telegram_enviar(f"⏰ La cochera está abierta desde hace {tiempo_str}. Recuerda cerrarla.", selected_chat)
+#                         aviso_15min_hecho = True
+#                         ultimo_aviso = datetime.now()
+#                     elif aviso_15min_hecho:
+#                         if ultimo_aviso is None:
+#                             ultimo_aviso = datetime.now()
+#                         tiempo_desde_ultimo_aviso = datetime.now() - ultimo_aviso
+#                         if tiempo_desde_ultimo_aviso >= timedelta(minutes=30):
+#                             tiempo_str = formatear_tiempo(tiempo_abierta_actual)
+#                             telegram_enviar(f"⏰ La cochera sigue abierta desde hace {tiempo_str}. Por favor, recuerda cerrarla.", selected_chat)
+#                             ultimo_aviso = datetime.now()
+#             else:
+#                 tiempo_abierta = None
+#                 aviso_15min_hecho = False
+#                 ultimo_aviso = None
+#         except Exception as e:
+#             print(f"❌ Error en monitor_cochera: {e}")
+#         await asyncio.sleep(60)
+
+import csv
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+MQTT_HOST = "localhost"
+MQTT_PORT = 1883
+MQTT_USER = "marc"
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "")
+
+# Topics reales sacados de tus logs
+TOPIC_COCHERA_INPUT = "shellyplus1-cotxera/status/input:0"
+TOPIC_COCHERA_COMMAND = "shellyplus1-cotxera/command"
+
+TOPIC_SWITCH_STATUS = "shellyplus1pm-horno/status/switch:0"
+TOPIC_EVENTS_RPC     = "shellyplus1pm-horno/events/rpc"
+TOPIC_ONLINE         = "shellyplus1pm-horno/online"
+TOPIC_STATUS_MQTT    = "shellyplus1pm-horno/status/mqtt"
+
+# CSV para persistir apower historic
+APOWER_CSV = "/tmp/horno_apower_hist.csv"
+
+# Umbrales / tiempos
+MIN_WATTS_ENCENDIDO = 5.0       # si apower >= esto, consideramos encendido aunque output falte
+APAGADO_ESTABLE_S = 60          # 60 segundos para considerar fin de sesión
+COCHERA_POLL_S = 60             # cada 60s se pide status_update a la cochera si está abierta
+
+# ---------------------------
+# Estado global (compartido)
+# ---------------------------
+# Cochera
+Cerrado = None
+cerrado_anterior = None
+
+# Horno / sesión
+sesion_activa = False
+horno_en_marcha = False
+ultimo_off_ts = None
+inicio_sesion_ts = None
+
+aenergy_inicio = None
+aenergy_ultimo = None
+
+apower_sesion = []
+cierre_task = None
+
+def _grafico_path():
+    ts = inicio_sesion_ts.strftime("%Y%m%d_%H%M%S") if inicio_sesion_ts else datetime.now().strftime("%Y%m%d_%H%M%S")
+    return f"/tmp/horno_sesion_{ts}.png"
+
+def _asegurar_csv():
+    if not os.path.exists(APOWER_CSV):
+        try:
+            with open(APOWER_CSV, "w", newline="", encoding="utf-8") as f:
+                w = csv.writer(f)
+                w.writerow(["timestamp_iso", "apower_W"])
+        except Exception as e:
+            print("⚠️ No se pudo crear CSV apower:", e)
+
+def _iniciar_sesion_si_no(apower: float = None):
+    global sesion_activa, inicio_sesion_ts, aenergy_inicio
+    if not sesion_activa:
+        sesion_activa = True
+        inicio_sesion_ts = datetime.now()
+        aenergy_inicio = None  # se rellenará cuando lleguen datos
+        apower_sesion.clear()
+        print(f"▶️ Iniciada sesión horno en {inicio_sesion_ts.isoformat()} (apower inicial: {apower})")
+        try:
+            telegram_enviar("🔥 Horno ENCENDIDO", selected_chat)
+        except:
+            pass
+
+def _marcar_apagado():
+    global ultimo_off_ts, horno_en_marcha
+    horno_en_marcha = False
+    ultimo_off_ts = datetime.now()
+    print(f"❄️ Horno APAGADO en {ultimo_off_ts.isoformat()}")
+
+def _marcar_encendido():
+    global horno_en_marcha, ultimo_off_ts
+    horno_en_marcha = True
+    ultimo_off_ts = None
+    print("🔥 Horno detectado ENCENDIDO")
+
+def _append_apower(apower: float):
+    ts = datetime.now()
+    apower_sesion.append((ts, float(apower)))
+    try:
+        _asegurar_csv()
+        with open(APOWER_CSV, "a", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            w.writerow([ts.isoformat(), float(apower)])
+    except Exception as e:
+        print("⚠️ No se pudo escribir CSV apower:", e)
+
+def _actualizar_aenergy(aenergy_total: float):
+    global aenergy_inicio, aenergy_ultimo
+    if sesion_activa and aenergy_inicio is None:
+        aenergy_inicio = float(aenergy_total)
+        print("👉 Capturado aenergy inicio:", aenergy_inicio)
+    aenergy_ultimo = float(aenergy_total)
+
+def _estimacion_wh_from_apower(apower_list):
+    """Trapezoidal integration para estimar Wh de apower_sesion (si falta aenergy)."""
+    if not apower_list:
+        return 0.0
+    if len(apower_list) == 1:
+        # aproximamos: potencia * intervalo medio de 1 minuto
+        return apower_list[0][1] * (1/60.0)
+    total_wh = 0.0
+    for i in range(1, len(apower_list)):
+        t0, w0 = apower_list[i-1]
+        t1, w1 = apower_list[i]
+        delta_h = (t1 - t0).total_seconds() / 3600.0
+        total_wh += ((w0 + w1) / 2.0) * delta_h
+    return total_wh
+
+def _generar_grafico_y_enviar(usar_estimacion=False):
+    global aenergy_inicio, aenergy_ultimo
+    if not apower_sesion:
+        print("ℹ️ No hay datos de apower para graficar.")
+        telegram_enviar("📊 No hay datos de consumo para esta sesión.", selected_chat)
+        return
+
+    tiempos = [t for (t, _) in apower_sesion]
+    watios  = [w for (_, w) in apower_sesion]
+
+    plt.figure(figsize=(10, 4))
+    plt.plot(tiempos, watios, linewidth=1.6)
+    plt.title("Horno · Potencia (W) en el tiempo")
+    plt.xlabel("Tiempo")
+    plt.ylabel("Potencia (W)")
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    path = _grafico_path()
+    try:
+        plt.savefig(path)
+    finally:
+        plt.close()
+
+    # Enviar imagen
+    try:
+        telegram_enviar_foto(selected_chat, path)
+    except Exception as e:
+        print("❌ Error enviando gráfico:", e)
+
+    # Mensaje de consumo total
+    if aenergy_inicio is not None and aenergy_ultimo is not None:
+        delta_wh = round(aenergy_ultimo - aenergy_inicio, 3)
+        telegram_enviar(f"📊 Consumo total = {delta_wh} Wh", selected_chat)
+    else:
+        # fallback: estimación a partir de potencia
+        estim_wh = round(_estimacion_wh_from_apower(apower_sesion), 3)
+        telegram_enviar(f"📊 Consumo estimado = {estim_wh} Wh (fallback, faltaron datos de aenergy).", selected_chat)
+
+def _reset_sesion():
+    global sesion_activa, inicio_sesion_ts, aenergy_inicio, aenergy_ultimo, apower_sesion
+    sesion_activa = False
+    inicio_sesion_ts = None
+    aenergy_inicio = None
+    aenergy_ultimo = None
+    apower_sesion.clear()
+    print("🔄 Sesión reiniciada (lista para siguiente)")
+
+# ---------------------------
+# Monitor cochera (usa el mismo client)
+# ---------------------------
+async def monitor_cochera(client):
     global Cerrado
     tiempo_abierta = None
     aviso_15min_hecho = False
     ultimo_aviso = None
-    while True:
-        try:
-            if Cerrado is False:
-                await comando_cochera_update()
-                if tiempo_abierta is None:
-                    tiempo_abierta = datetime.now()
+    try:
+        while True:
+            try:
+                if Cerrado is False:
+                    # pedimos actualización al Shelly de la cochera
+                    try:
+                        await client.publish(TOPIC_COCHERA_COMMAND, "status_update")
+                    except Exception as e:
+                        print("⚠️ Error publicando comando cochera:", e)
+
+                    if tiempo_abierta is None:
+                        tiempo_abierta = datetime.now()
+                        aviso_15min_hecho = False
+                        ultimo_aviso = None
+                    else:
+                        tiempo_abierta_actual = datetime.now() - tiempo_abierta
+                        if not aviso_15min_hecho and tiempo_abierta_actual >= timedelta(minutes=15):
+                            tiempo_str = formatear_tiempo(tiempo_abierta_actual)
+                            telegram_enviar(f"⏰ La cochera está abierta desde hace {tiempo_str}. Recuerda cerrarla.", selected_chat)
+                            aviso_15min_hecho = True
+                            ultimo_aviso = datetime.now()
+                        elif aviso_15min_hecho:
+                            if ultimo_aviso is None:
+                                ultimo_aviso = datetime.now()
+                            tiempo_desde_ultimo_aviso = datetime.now() - ultimo_aviso
+                            if tiempo_desde_ultimo_aviso >= timedelta(minutes=30):
+                                tiempo_str = formatear_tiempo(tiempo_abierta_actual)
+                                telegram_enviar(f"⏰ La cochera sigue abierta desde hace {tiempo_str}. Por favor, recuerda cerrarla.", selected_chat)
+                                ultimo_aviso = datetime.now()
+                else:
+                    tiempo_abierta = None
                     aviso_15min_hecho = False
                     ultimo_aviso = None
-                else:
-                    tiempo_abierta_actual = datetime.now() - tiempo_abierta
-                    if not aviso_15min_hecho and tiempo_abierta_actual >= timedelta(minutes=15):
-                        tiempo_str = formatear_tiempo(tiempo_abierta_actual)
-                        telegram_enviar(f"⏰ La cochera está abierta desde hace {tiempo_str}. Recuerda cerrarla.", selected_chat)
-                        aviso_15min_hecho = True
-                        ultimo_aviso = datetime.now()
-                    elif aviso_15min_hecho:
-                        if ultimo_aviso is None:
-                            ultimo_aviso = datetime.now()
-                        tiempo_desde_ultimo_aviso = datetime.now() - ultimo_aviso
-                        if tiempo_desde_ultimo_aviso >= timedelta(minutes=30):
-                            tiempo_str = formatear_tiempo(tiempo_abierta_actual)
-                            telegram_enviar(f"⏰ La cochera sigue abierta desde hace {tiempo_str}. Por favor, recuerda cerrarla.", selected_chat)
-                            ultimo_aviso = datetime.now()
-            else:
-                tiempo_abierta = None
-                aviso_15min_hecho = False
-                ultimo_aviso = None
+            except Exception as e:
+                print("❌ Error en monitor_cochera interno:", e)
+            await asyncio.sleep(COCHERA_POLL_S)
+    except asyncio.CancelledError:
+        print("🛑 monitor_cochera cancelado")
+        raise
+    except Exception as e:
+        print("❌ monitor_cochera excepción:", e)
+
+# ---------------------------
+# Lógica de cierre diferido (60s) - se lanza al recibir OFF
+# ---------------------------
+async def _deferred_cierre():
+    global cierre_task, ultimo_off_ts
+    try:
+        await asyncio.sleep(APAGADO_ESTABLE_S)
+        # comprueba que sigue apagado y que hubo sesión
+        if not horno_en_marcha and sesion_activa and ultimo_off_ts:
+            elapsed = (datetime.now() - ultimo_off_ts).total_seconds()
+            if elapsed >= APAGADO_ESTABLE_S:
+                print(f"⏹️ Fin de sesión confirmado (apagado {elapsed}s). Generando informe...")
+                _generar_grafico_y_enviar()
+                _reset_sesion()
+    except asyncio.CancelledError:
+        # cancelado (p.ej. llegó ON)
+        # print("✖️ tarea de cierre cancelada porque se encendió antes de 60s")
+        pass
+    except Exception as e:
+        print("❌ Error en tarea de cierre diferido:", e)
+    finally:
+        cierre_task = None
+
+# ---------------------------
+# Procesador central de mensajes MQTT (un solo client)
+# ---------------------------
+async def mqtt_manager():
+    global Cerrado, cerrado_anterior
+    global horno_en_marcha, sesion_activa, cierre_task
+
+    # Aseguramos CSV
+    _asegurar_csv()
+
+    while True:
+        try:
+            async with Client(MQTT_HOST, MQTT_PORT, username=MQTT_USER, password=MQTT_PASSWORD) as client:
+                print("✅ Conectado a MQTT broker")
+
+                # Nos suscribimos a todos los topics que necesitamos
+                await client.subscribe([
+                    TOPIC_COCHERA_INPUT,
+                    TOPIC_SWITCH_STATUS,
+                    TOPIC_EVENTS_RPC,
+                    TOPIC_ONLINE,
+                    TOPIC_STATUS_MQTT
+                ])
+
+                # arrancamos monitor_cochera usando el mismo client
+                cochera_task = asyncio.create_task(monitor_cochera(client))
+
+                async with client.unfiltered_messages() as messages:
+                    async for message in messages:
+                        topic = str(message.topic)
+                        payload_raw = message.payload.decode(errors="ignore")
+                        # procesado por topic
+                        try:
+                            # ---------- COCHERA ----------
+                            if topic == TOPIC_COCHERA_INPUT:
+                                try:
+                                    data = json.loads(payload_raw)
+                                    state = data.get("state", None)
+                                except Exception:
+                                    # a veces payload no es JSON; lo dejamos tal cual
+                                    state = payload_raw.strip().lower() in ("1", "true", "on")
+                                # sólo notificar si cambia
+                                if state != cerrado_anterior:
+                                    cerrado_anterior = state
+                                    Cerrado = state
+                                    if state:
+                                        telegram_enviar("🔴 Cochera cerrada", selected_chat)
+                                    else:
+                                        telegram_enviar("🟢 Cochera abierta", selected_chat)
+                                        # webhook a HA
+                                        try:
+                                            requests.post("http://localhost:8123/api/webhook/grabar_terrassa", timeout=5)
+                                        except Exception as e:
+                                            print("⚠️ Error llamando webhook grabar_terrassa:", e)
+
+                            # ---------- HORNO: status/switch:0 ----------
+                            elif topic == TOPIC_SWITCH_STATUS:
+                                # payload JSON como en tus logs
+                                try:
+                                    data = json.loads(payload_raw)
+                                except Exception:
+                                    print("⚠️ payload no JSON en switch:0:", payload_raw[:200])
+                                    continue
+
+                                output = data.get("output")
+                                apower = data.get("apower")
+                                aenergy = (data.get("aenergy") or {}).get("total")
+
+                                if isinstance(output, bool):
+                                    if output:
+                                        _marcar_encendido()
+                                        _iniciar_sesion_si_no(apower)
+                                        # cancelar cierre si existía
+                                        if cierre_task is not None:
+                                            cierre_task.cancel()
+                                            cierre_task = None
+                                    else:
+                                        _marcar_apagado()
+                                        # arrancamos cierre diferido
+                                        if cierre_task is None:
+                                            cierre_task = asyncio.create_task(_deferred_cierre())
+
+                                # apower
+                                if apower is not None:
+                                    # si la máquina no pensaba que estaba en marcha pero apower alto -> encendido por potencia
+                                    if not horno_en_marcha and float(apower) >= MIN_WATTS_ENCENDIDO:
+                                        _marcar_encendido()
+                                        _iniciar_sesion_si_no(apower)
+                                        if cierre_task is not None:
+                                            cierre_task.cancel()
+                                            cierre_task = None
+                                    _append_apower(float(apower))
+
+                                # aenergy
+                                if aenergy is not None:
+                                    _actualizar_aenergy(float(aenergy))
+
+                            # ---------- HORNO: events/rpc ----------
+                            elif topic == TOPIC_EVENTS_RPC:
+                                # estructura: {"method":"NotifyStatus","params":{...,"switch:0":{"apower":40.2,"current":0.234}}}
+                                try:
+                                    data = json.loads(payload_raw)
+                                except Exception:
+                                    # no JSON -> ignorar
+                                    continue
+                                params = data.get("params", {}) or {}
+                                sw = params.get("switch:0")
+                                if isinstance(sw, dict):
+                                    apower = sw.get("apower")
+                                    output = sw.get("output")
+                                    if apower is not None:
+                                        if not horno_en_marcha and float(apower) >= MIN_WATTS_ENCENDIDO:
+                                            _marcar_encendido()
+                                            _iniciar_sesion_si_no(apower)
+                                            if cierre_task is not None:
+                                                cierre_task.cancel()
+                                                cierre_task = None
+                                        _append_apower(float(apower))
+                                    if isinstance(output, bool):
+                                        if output:
+                                            _marcar_encendido()
+                                            _iniciar_sesion_si_no(apower)
+                                            if cierre_task is not None:
+                                                cierre_task.cancel()
+                                                cierre_task = None
+                                        else:
+                                            _marcar_apagado()
+                                            if cierre_task is None:
+                                                cierre_task = asyncio.create_task(_deferred_cierre())
+
+                            # ---------- ONLINE / status/mqtt ----------
+                            elif topic == TOPIC_ONLINE:
+                                online = payload_raw.strip().lower() == "true"
+                                if not online:
+                                    # marcar posible apagado (no forzamos fin de sesión)
+                                    _marcar_apagado()
+                                    if cierre_task is None:
+                                        cierre_task = asyncio.create_task(_deferred_cierre())
+                            elif topic == TOPIC_STATUS_MQTT:
+                                # diagnostico, ignoramos
+                                pass
+
+                        except Exception as e:
+                            print(f"⚠️ Error procesando mensaje MQTT ({topic}): {e} | payload={payload_raw[:200]}")
+
+                # si salimos del loop de mensajes, cancelamos cochera_task
+                cochera_task.cancel()
+                try:
+                    await cochera_task
+                except:
+                    pass
         except Exception as e:
-            print(f"❌ Error en monitor_cochera: {e}")
-        await asyncio.sleep(60)
+            print(f"❌ Excepción mqtt_manager: {e}. Reintentando en 10s...")
+            await asyncio.sleep(10)
+            continue
 
 #Main
 
@@ -1189,8 +1583,7 @@ async def main():
         asyncio.create_task(captura_cada_hora()),
         asyncio.create_task(loop_principal(TELEGRAM_CHAT_ID)),
         asyncio.create_task(vigilar_movimiento()),
-        asyncio.create_task(mqtt_escuchar()),
-        asyncio.create_task(monitor_cochera()),
+        asyncio.create_task(mqtt_manager()),
     ]
     await comando_cochera_update()
     print("🚀 Bot iniciado")
