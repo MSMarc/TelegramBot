@@ -1100,7 +1100,7 @@ def actualizar_env():
 
 #MQTT
 
-async def mqtt_escuchar_cochera():
+async def mqtt_escuchar():
     global Cerrado, cerrado_anterior
     try:
         async with Client("localhost", 1883, username="marc", password=MQTT_PASSWORD) as client:
@@ -1122,7 +1122,7 @@ async def mqtt_escuchar_cochera():
     except Exception as e:
         print(f"❌ Error al recibir MQTT: {e}")
         await asyncio.sleep(10)
-        await mqtt_escuchar_cochera()
+        await mqtt_escuchar()
 
 async def comando_cochera_update():
     try:
@@ -1189,7 +1189,7 @@ async def main():
         asyncio.create_task(captura_cada_hora()),
         asyncio.create_task(loop_principal(TELEGRAM_CHAT_ID)),
         asyncio.create_task(vigilar_movimiento()),
-        asyncio.create_task(mqtt_escuchar_cochera()),
+        asyncio.create_task(mqtt_escuchar()),
         asyncio.create_task(monitor_cochera()),
     ]
     await comando_cochera_update()
