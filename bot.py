@@ -137,10 +137,10 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
         comando_add(texto, chat_id)
     elif texto.startswith("/delete"):
         comando_delete(texto, chat_id)
-    elif texto.startswith("/arm"):
-        await comando_arm(texto, chat_id)
-    elif texto.startswith("/home"):
-        await comando_home(texto, chat_id)
+    # elif texto.startswith("/arm"):
+    #     await comando_arm(texto, chat_id)
+    # elif texto.startswith("/home"):
+    #     await comando_home(texto, chat_id)
     elif texto == "/cams":
         await comando_cams(chat_id)
     elif texto == "/last":
@@ -153,8 +153,8 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
         await comando_cap(chat_id)
     elif texto.startswith("/rec"):
         await comando_rec(texto, chat_id)
-    elif texto.startswith("/nocturno"):
-        await comando_nocturno(texto, chat_id)
+    # elif texto.startswith("/nocturno"):
+    #     await comando_nocturno(texto, chat_id)
     elif texto == "/stop":
         comando_stop(user_id, chat_id)
     elif texto.startswith("/") and texto[1:].split()[0].isdigit():
@@ -344,50 +344,50 @@ def comando_delete(texto, chat_id):
     except:
         telegram_enviar("❌ Uso: /delete <IP | Nombre>", chat_id)
 
-async def comando_arm_bool(activar: bool, chat_id):
-    global modo_home, modo_arm
-    if blink is None:
-        try:
-            await conectar_blink()
-        except Exception as e:
-            telegram_enviar(f"❌ Error conectando Blink: {e}", chat_id)
-            return
-    if activar:
-        await activar_blink(chat_id)
-    else:
-        await desactivar_blink(chat_id)
+# async def comando_arm_bool(activar: bool, chat_id):
+#     global modo_home, modo_arm
+#     if blink is None:
+#         try:
+#             await conectar_blink()
+#         except Exception as e:
+#             telegram_enviar(f"❌ Error conectando Blink: {e}", chat_id)
+#             return
+#     if activar:
+#         await activar_blink(chat_id)
+#     else:
+#         await desactivar_blink(chat_id)
 
-async def comando_arm(texto, chat_id):
-    global modo_arm
-    partes = texto.split()
-    if len(partes) == 2 and partes[1] in ["auto", "true", "false"]:
-        nuevo_valor = partes[1]
-        if modo_arm != nuevo_valor:
-            modo_arm = nuevo_valor
-        else:
-            telegram_enviar(f"🔒 Modo /arm ya estaba en *{modo_arm}*", chat_id)
-    elif len(partes) == 1:
-        if modo_arm=="auto":
-            telegram_enviar(f"🔒 Estado actual /arm auto. (Auto=*{blink.sync[BLINK_MODULE].arm}*)", chat_id)
-        else:
-            telegram_enviar(f"🔒 Estado actual /arm *{modo_arm}*", chat_id)
-    else:
-        telegram_enviar("❌ Uso: /arm true | false | auto", chat_id)
+# async def comando_arm(texto, chat_id):
+#     global modo_arm
+#     partes = texto.split()
+#     if len(partes) == 2 and partes[1] in ["auto", "true", "false"]:
+#         nuevo_valor = partes[1]
+#         if modo_arm != nuevo_valor:
+#             modo_arm = nuevo_valor
+#         else:
+#             telegram_enviar(f"🔒 Modo /arm ya estaba en *{modo_arm}*", chat_id)
+#     elif len(partes) == 1:
+#         if modo_arm=="auto":
+#             telegram_enviar(f"🔒 Estado actual /arm auto. (Auto=*{blink.sync[BLINK_MODULE].arm}*)", chat_id)
+#         else:
+#             telegram_enviar(f"🔒 Estado actual /arm *{modo_arm}*", chat_id)
+#     else:
+#         telegram_enviar("❌ Uso: /arm true | false | auto", chat_id)
 
-async def comando_home(texto, chat_id):
-    global modo_home
-    partes = texto.split()
-    if len(partes) == 2 and partes[1] in ["auto", "true", "false"]:
-        nuevo_valor = partes[1]
-        if modo_home != nuevo_valor:
-            modo_home = nuevo_valor
-            telegram_enviar(f"🏠 Modo HOME actualizado a *{modo_home}*", chat_id)
-        else:
-            telegram_enviar(f"🏠 Modo HOME ya estaba en *{modo_home}*", chat_id)
-    elif len(partes) == 1:
-        telegram_enviar(f"🏠 Estado actual /home *{modo_home}*", chat_id)
-    else:
-        telegram_enviar("❌ Uso: /home true | false | auto", chat_id)
+# async def comando_home(texto, chat_id):
+#     global modo_home
+#     partes = texto.split()
+#     if len(partes) == 2 and partes[1] in ["auto", "true", "false"]:
+#         nuevo_valor = partes[1]
+#         if modo_home != nuevo_valor:
+#             modo_home = nuevo_valor
+#             telegram_enviar(f"🏠 Modo HOME actualizado a *{modo_home}*", chat_id)
+#         else:
+#             telegram_enviar(f"🏠 Modo HOME ya estaba en *{modo_home}*", chat_id)
+#     elif len(partes) == 1:
+#         telegram_enviar(f"🏠 Estado actual /home *{modo_home}*", chat_id)
+#     else:
+#         telegram_enviar("❌ Uso: /home true | false | auto", chat_id)
 
 async def comando_cams(chat_id):
     if blink is None:
@@ -589,27 +589,27 @@ async def comando_rec(texto, chat_id):
                 else:
                     telegram_enviar("❌ Número fuera de rango.", chat_id)
 
-async def comando_nocturno(texto, chat_id):
-    global HORA_ARMADO_INICIO, HORA_ARMADO_FIN
-    args = texto.split()[1:]
-    if len(args) == 0:
-        telegram_enviar(f"⏰ Horario nocturno actual: {HORA_ARMADO_INICIO.strftime('%H:%M')} a {HORA_ARMADO_FIN.strftime('%H:%M')}", chat_id)
-        return
-    elif len(args) != 2:
-        telegram_enviar("❌ Uso: /nocturno HH:MM HH:MM\nEjemplo: /nocturno 00:30 08:00", chat_id)
-        return
-    try:
-        h_inicio, m_inicio = map(int, args[0].split(":"))
-        h_fin, m_fin = map(int, args[1].split(":"))
-        nueva_hora_inicio = time(h_inicio, m_inicio)
-        nueva_hora_fin = time(h_fin, m_fin)
-    except Exception:
-        telegram_enviar("❌ Formato incorrecto. Usa HH:MM para ambas horas.", chat_id)
-        return
-    HORA_ARMADO_INICIO = nueva_hora_inicio
-    HORA_ARMADO_FIN = nueva_hora_fin
-    actualizar_env()
-    telegram_enviar(f"⏰ Horario nocturno actualizado: {HORA_ARMADO_INICIO.strftime('%H:%M')} a {HORA_ARMADO_FIN.strftime('%H:%M')}", chat_id)
+# async def comando_nocturno(texto, chat_id):
+#     global HORA_ARMADO_INICIO, HORA_ARMADO_FIN
+#     args = texto.split()[1:]
+#     if len(args) == 0:
+#         telegram_enviar(f"⏰ Horario nocturno actual: {HORA_ARMADO_INICIO.strftime('%H:%M')} a {HORA_ARMADO_FIN.strftime('%H:%M')}", chat_id)
+#         return
+#     elif len(args) != 2:
+#         telegram_enviar("❌ Uso: /nocturno HH:MM HH:MM\nEjemplo: /nocturno 00:30 08:00", chat_id)
+#         return
+#     try:
+#         h_inicio, m_inicio = map(int, args[0].split(":"))
+#         h_fin, m_fin = map(int, args[1].split(":"))
+#         nueva_hora_inicio = time(h_inicio, m_inicio)
+#         nueva_hora_fin = time(h_fin, m_fin)
+#     except Exception:
+#         telegram_enviar("❌ Formato incorrecto. Usa HH:MM para ambas horas.", chat_id)
+#         return
+#     HORA_ARMADO_INICIO = nueva_hora_inicio
+#     HORA_ARMADO_FIN = nueva_hora_fin
+#     actualizar_env()
+#     telegram_enviar(f"⏰ Horario nocturno actualizado: {HORA_ARMADO_INICIO.strftime('%H:%M')} a {HORA_ARMADO_FIN.strftime('%H:%M')}", chat_id)
 
 def comando_stop(user_id, chat_id):
     if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
@@ -876,79 +876,79 @@ async def desactivar_blink(chat_id):
 
 #Bucles
 
-async def loop_principal(chat_id):
-    global modo_home, modo_arm, APAGAR_BOT, dentro_horario_anterior
-    while not APAGAR_BOT.is_set():
-        try:
-            ahora = datetime.now().time()
-            if HORA_ARMADO_INICIO < HORA_ARMADO_FIN:
-                dentro_horario = HORA_ARMADO_INICIO <= ahora < HORA_ARMADO_FIN
-            else:
-                dentro_horario = ahora >= HORA_ARMADO_INICIO or ahora < HORA_ARMADO_FIN
-            if dentro_horario and not dentro_horario_anterior:
-                telegram_enviar(f"🌙 Protección nocturna activada a las {HORA_ARMADO_INICIO.strftime('%H:%M')}", chat_id)
-            if not dentro_horario and dentro_horario_anterior:
-                telegram_enviar(f"☀️ Protección nocturna desactivada a las {HORA_ARMADO_FIN.strftime('%H:%M')}", chat_id)
-            dentro_horario_anterior = dentro_horario
-            if modo_arm == "true":
-                armar = True
-            elif modo_arm == "false":
-                armar = False
-            elif modo_arm == "auto":
-                if modo_home == "auto":
-                    presencia = await detectar_presencia()
-                    if presencia is None:
-                        telegram_enviar(f"⚠️ No se detecta el router {IP_ROUTER}", chat_id)
-                        await asyncio.sleep(CHECK_INTERVAL*2)
-                        continue
-                else:
-                    presencia = (modo_home == "true")
-                if dentro_horario:
-                    armar = True
-                else:
-                    armar = not presencia
-            else:
-                telegram_enviar(f"❌ Valor de /arm desconocido: {modo_arm}", chat_id)
-                await asyncio.sleep(CHECK_INTERVAL)
-                continue
-            if blink.sync[BLINK_MODULE].arm != armar:
-                await comando_arm_bool(armar, chat_id)
-            await asyncio.sleep(CHECK_INTERVAL)
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            print(f"❌ Error en loop_principal: {e}")
-            await asyncio.sleep(CHECK_INTERVAL/2)
-    print("end loop_principal")
+# async def loop_principal(chat_id):
+#     global modo_home, modo_arm, APAGAR_BOT, dentro_horario_anterior
+#     while not APAGAR_BOT.is_set():
+#         try:
+#             ahora = datetime.now().time()
+#             if HORA_ARMADO_INICIO < HORA_ARMADO_FIN:
+#                 dentro_horario = HORA_ARMADO_INICIO <= ahora < HORA_ARMADO_FIN
+#             else:
+#                 dentro_horario = ahora >= HORA_ARMADO_INICIO or ahora < HORA_ARMADO_FIN
+#             if dentro_horario and not dentro_horario_anterior:
+#                 telegram_enviar(f"🌙 Protección nocturna activada a las {HORA_ARMADO_INICIO.strftime('%H:%M')}", chat_id)
+#             if not dentro_horario and dentro_horario_anterior:
+#                 telegram_enviar(f"☀️ Protección nocturna desactivada a las {HORA_ARMADO_FIN.strftime('%H:%M')}", chat_id)
+#             dentro_horario_anterior = dentro_horario
+#             if modo_arm == "true":
+#                 armar = True
+#             elif modo_arm == "false":
+#                 armar = False
+#             elif modo_arm == "auto":
+#                 if modo_home == "auto":
+#                     presencia = await detectar_presencia()
+#                     if presencia is None:
+#                         telegram_enviar(f"⚠️ No se detecta el router {IP_ROUTER}", chat_id)
+#                         await asyncio.sleep(CHECK_INTERVAL*2)
+#                         continue
+#                 else:
+#                     presencia = (modo_home == "true")
+#                 if dentro_horario:
+#                     armar = True
+#                 else:
+#                     armar = not presencia
+#             else:
+#                 telegram_enviar(f"❌ Valor de /arm desconocido: {modo_arm}", chat_id)
+#                 await asyncio.sleep(CHECK_INTERVAL)
+#                 continue
+#             if blink.sync[BLINK_MODULE].arm != armar:
+#                 await comando_arm_bool(armar, chat_id)
+#             await asyncio.sleep(CHECK_INTERVAL)
+#         except asyncio.CancelledError:
+#             break
+#         except Exception as e:
+#             print(f"❌ Error en loop_principal: {e}")
+#             await asyncio.sleep(CHECK_INTERVAL/2)
+#     print("end loop_principal")
 
-async def detectar_presencia():
-    global presencia_anterior
-    async def hay_dispositivos_presentes():
-        for ip in IP_DISPOSITIVOS:
-            if await async_ping(ip.strip()):
-                return True
-        return False
-    try:
-        router_ok = await async_ping(IP_ROUTER)
-        if not router_ok:
-            print(f"⚠️ No se detecta el router {IP_ROUTER}")
-            return None
-        presencia_actual = await hay_dispositivos_presentes()
-        if not presencia_actual:
-            await asyncio.sleep(20)
-            presencia_actual = await hay_dispositivos_presentes()
-        if not presencia_actual:
-            await asyncio.sleep(20)
-            presencia_actual = await hay_dispositivos_presentes()
-        if router_ok and presencia_anterior is not None:
-            if presencia_anterior and not presencia_actual:
-                telegram_enviar("🏠 Home auto ha detectado casa vacía.", TELEGRAM_CHAT_ID)
-            elif not presencia_anterior and presencia_actual:
-                telegram_enviar("🏠 Home auto ha detectado alguien en casa.", TELEGRAM_CHAT_ID)
-        presencia_anterior = presencia_actual
-        return presencia_actual
-    except Exception as e:
-        print(f"❌ Error en detectar_presencia: {e}")
+# async def detectar_presencia():
+#     global presencia_anterior
+#     async def hay_dispositivos_presentes():
+#         for ip in IP_DISPOSITIVOS:
+#             if await async_ping(ip.strip()):
+#                 return True
+#         return False
+#     try:
+#         router_ok = await async_ping(IP_ROUTER)
+#         if not router_ok:
+#             print(f"⚠️ No se detecta el router {IP_ROUTER}")
+#             return None
+#         presencia_actual = await hay_dispositivos_presentes()
+#         if not presencia_actual:
+#             await asyncio.sleep(20)
+#             presencia_actual = await hay_dispositivos_presentes()
+#         if not presencia_actual:
+#             await asyncio.sleep(20)
+#             presencia_actual = await hay_dispositivos_presentes()
+#         if router_ok and presencia_anterior is not None:
+#             if presencia_anterior and not presencia_actual:
+#                 telegram_enviar("🏠 Home auto ha detectado casa vacía.", TELEGRAM_CHAT_ID)
+#             elif not presencia_anterior and presencia_actual:
+#                 telegram_enviar("🏠 Home auto ha detectado alguien en casa.", TELEGRAM_CHAT_ID)
+#         presencia_anterior = presencia_actual
+#         return presencia_actual
+#     except Exception as e:
+#         print(f"❌ Error en detectar_presencia: {e}")
 
 
 async def vigilar_movimiento():
@@ -1187,7 +1187,7 @@ async def main():
     tareas = [
         asyncio.create_task(telegram_recibir()),
         asyncio.create_task(captura_cada_hora()),
-        asyncio.create_task(loop_principal(TELEGRAM_CHAT_ID)),
+        # asyncio.create_task(loop_principal(TELEGRAM_CHAT_ID)),
         asyncio.create_task(vigilar_movimiento()),
         asyncio.create_task(mqtt_escuchar_cochera()),
         asyncio.create_task(monitor_cochera()),
