@@ -5,6 +5,7 @@ etiquetas_videos.json
 videos/
 fotos/
 venv/
+venv_old/
 __pycache__/
 start_bot.sh
 push.sh
