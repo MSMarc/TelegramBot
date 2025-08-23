@@ -860,7 +860,7 @@ async def activar_blink(chat_id):
             return
         if not sync_module.arm:
             await sync_module.async_arm(True)
-            telegram_enviar(f"🔒 Blink armado", chat_id)
+            telegram_enviar(f"🔒 Sistema armado", chat_id)
             await asyncio.sleep(CHECK_INTERVAL*2)
     except Exception as e:
         telegram_enviar(f"❌ Error activando Blink: {e}", chat_id)
@@ -873,7 +873,7 @@ async def desactivar_blink(chat_id):
             return
         if sync_module.arm:
             await sync_module.async_arm(False)
-            telegram_enviar(f"🔓 Blink desarmado", chat_id)
+            telegram_enviar(f"🔓 Sistema desarmado", chat_id)
             await asyncio.sleep(CHECK_INTERVAL*2)
     except Exception as e:
         telegram_enviar(f"❌ Error desactivando Blink: {e}", chat_id)
