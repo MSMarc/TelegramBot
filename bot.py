@@ -36,15 +36,15 @@ APAGAR_BOT = asyncio.Event()
 CONFIG_PATH = "blink_config.json"
 RUTA_ETIQUETAS = "etiquetas_videos.json"
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
-modo_home = "auto"
-modo_arm = "auto"
+# modo_home = "auto"
+# modo_arm = "auto"
 blink = None
 CHECK_INTERVAL = 20
 ULTIMOS_CLIPS = {}
 videos_ultimas_24h = []
 session = None
-presencia_anterior = None
-dentro_horario_anterior = False
+# presencia_anterior = None
+# dentro_horario_anterior = False
 modo_terminal_por_chat = {}
 temporizadores_terminal = {}
 Cerrado = True
@@ -137,8 +137,8 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
         comando_add(texto, chat_id)
     elif texto.startswith("/delete"):
         comando_delete(texto, chat_id)
-    # elif texto.startswith("/arm"):
-    #     await comando_arm(texto, chat_id)
+    elif texto.startswith("/arm"):
+        await comando_arm(texto, chat_id)
     # elif texto.startswith("/home"):
     #     await comando_home(texto, chat_id)
     elif texto == "/cams":
@@ -344,18 +344,22 @@ def comando_delete(texto, chat_id):
     except:
         telegram_enviar("❌ Uso: /delete <IP | Nombre>", chat_id)
 
-# async def comando_arm_bool(activar: bool, chat_id):
-#     global modo_home, modo_arm
-#     if blink is None:
-#         try:
-#             await conectar_blink()
-#         except Exception as e:
-#             telegram_enviar(f"❌ Error conectando Blink: {e}", chat_id)
-#             return
-#     if activar:
-#         await activar_blink(chat_id)
-#     else:
-#         await desactivar_blink(chat_id)
+async def comando_arm(texto, chat_id):
+    if blink is None:
+        try:
+            await conectar_blink()
+        except Exception as e:
+            telegram_enviar(f"❌ Error conectando Blink: {e}", chat_id)
+            return
+    partes = texto.split()
+    if len(partes) == 2 and partes[1] in ["true", "false"]:
+        if partes[1]=="true":
+            await activar_blink(chat_id)
+        else:
+            await desactivar_blink(chat_id)
+    elif len(partes) == 1:
+        modo_arm=blink.sync[BLINK_MODULE].arm
+        telegram_enviar(f"{'🔒' if modo_arm else '🔓'} Sistema {'Armado' if modo_arm else 'Desarmado'}", chat_id)
 
 # async def comando_arm(texto, chat_id):
 #     global modo_arm
