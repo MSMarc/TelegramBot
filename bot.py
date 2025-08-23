@@ -1110,6 +1110,7 @@ async def mqtt_escuchar_cochera():
         async with Client("localhost", 1883, username="marc", password=MQTT_PASSWORD) as client:
             await client.subscribe("shellyplus1-cotxera/status/input:0")
             async for message in client.messages:
+                print("MQTT recibido:", message.topic, message.payload.decode())
                 payload = message.payload.decode()
                 try:
                     data = json.loads(payload)
@@ -1118,8 +1119,10 @@ async def mqtt_escuchar_cochera():
                         cerrado_anterior = Cerrado
                         if Cerrado:
                             telegram_enviar("🔴 Cochera cerrada", selected_chat)
+                            print("🔴 Cochera cerrada", selected_chat)
                         else:
                             telegram_enviar("🟢 Cochera abierta", selected_chat)
+                            print("🟢 Cochera abierta", selected_chat)
                             requests.post(f"http://localhost:8123/api/webhook/grabar_terrassa")
                 except Exception as e:
                     print(f"Error parseando MQTT: {e}")
