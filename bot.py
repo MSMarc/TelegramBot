@@ -86,7 +86,7 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
     global USUARIOS_AUTORIZADOS, cerrado_anterior
     if str(user_id) not in USUARIOS_AUTORIZADOS:
         telegram_enviar("❌ Acceso denegado. Contacta con el administrador para usarme.", chat_id)
-        print("Detectado uso no autorizado")
+        print("Detectado uso no autorizado de "+user_id)
         return
     if chat_id in USUARIOS_AUTORIZADOS[1:]:
         try:
