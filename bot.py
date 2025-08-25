@@ -1118,13 +1118,13 @@ async def mqtt_escuchar_cochera():
     global Cerrado, cerrado_anterior
     try:
         async with Client("localhost", 1883, username="marc", password=MQTT_PASSWORD) as client:
-            await client.subscribe("shellyplus1-cotxera/status/input:0")
-            await client.subscribe("shellyplus1-cotxera/status/switch:0")
+            await client.subscribe("shellyplus1-cochera/status/input:0")
+            await client.subscribe("shellyplus1-cochera/status/switch:0")
             async for message in client.messages:
                 payload = message.payload.decode()
                 topic = message.topic
                 escribir_log_mqtt(topic, payload)
-                if topic == "shellyplus1-cotxera/status/input:0":
+                if topic == "shellyplus1-cochera/status/input:0":
                     try:
                         data = json.loads(payload)
                         Cerrado = data.get("state", None)
@@ -1145,7 +1145,7 @@ async def mqtt_escuchar_cochera():
 async def comando_cochera_update():
     try:
         async with Client("localhost", 1883, username="marc", password=MQTT_PASSWORD) as client:
-            await client.publish("shellyplus1-cotxera/command", "status_update")
+            await client.publish("shellyplus1-cochera/command", "status_update")
     except Exception as e:
         print(f"❌ Error al enviar MQTT: {e}")
 
