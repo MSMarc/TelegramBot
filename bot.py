@@ -1104,28 +1104,39 @@ def actualizar_env():
 
 #MQTT
 
+LOG_FILE = "mqtt_cochera.log"
+
+def escribir_log_mqtt(topic, payload):
+    try:
+        with open(LOG_FILE, "a", encoding="utf-8") as log:
+            log.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] "
+                      f"TOPIC: {topic} | PAYLOAD: {payload}\n")
+    except Exception as e:
+        print(f"❌ Error escribiendo log MQTT: {e}")
+
 async def mqtt_escuchar_cochera():
     global Cerrado, cerrado_anterior
     try:
         async with Client("localhost", 1883, username="marc", password=MQTT_PASSWORD) as client:
             await client.subscribe("shellyplus1-cotxera/status/input:0")
+            await client.subscribe("shellyplus1-cotxera/status/switch:0")
             async for message in client.messages:
-                print("MQTT recibido:", message.topic, message.payload.decode())
                 payload = message.payload.decode()
-                try:
-                    data = json.loads(payload)
-                    Cerrado = data.get("state", None)
-                    if Cerrado != cerrado_anterior:
-                        cerrado_anterior = Cerrado
-                        if Cerrado:
-                            telegram_enviar("🔴 Cochera cerrada", selected_chat)
-                            print("🔴 Cochera cerrada", selected_chat)
-                        else:
-                            telegram_enviar("🟢 Cochera abierta", selected_chat)
-                            print("🟢 Cochera abierta", selected_chat)
-                            requests.post(f"http://localhost:8123/api/webhook/grabar_terrassa")
-                except Exception as e:
-                    print(f"Error parseando MQTT: {e}")
+                topic = message.topic
+                escribir_log_mqtt(topic, payload)
+                if topic == "shellyplus1-cotxera/status/input:0":
+                    try:
+                        data = json.loads(payload)
+                        Cerrado = data.get("state", None)
+                        if Cerrado != cerrado_anterior:
+                            cerrado_anterior = Cerrado
+                            if Cerrado:
+                                telegram_enviar("🔴 Cochera cerrada", selected_chat)
+                            else:
+                                telegram_enviar("🟢 Cochera abierta", selected_chat)
+                                requests.post("http://localhost:8123/api/webhook/grabar_terrassa")
+                    except Exception as e:
+                        print(f"Error parseando MQTT: {e}")
     except Exception as e:
         print(f"❌ Error al recibir MQTT: {e}")
         await asyncio.sleep(10)
