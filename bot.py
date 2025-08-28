@@ -826,31 +826,34 @@ async def conectar_blink():
     if blink and blink.available:
         return
     blink = Blink()
-    sesion_restaurada = False
-    try:
-        with open(CONFIG_PATH, "r") as f:
-            auth_data = json.load(f)
-        blink.auth = Auth(auth_data)
-        sesion_restaurada = True
-    except Exception:
-        print("⚠️ No se encontró sesión guardada o está corrupta. Login manual...")
-        if not BLINK_USER or not BLINK_PASS:
-            raise Exception("❌ No hay usuario o contraseña Blink en variables de entorno")
-        blink.auth = Auth({"username": BLINK_USER, "password": BLINK_PASS})
-    try:
-        await blink.start()
-        print("✅ Sesión Blink iniciada correctamente.")
-        blink.refresh_rate = 30
-        blink.no_owls = True
-    except Exception as e:
-        print(f"❌ Error iniciando Blink: {e}")
-        raise e
-    if not sesion_restaurada:
+    intentos = 0
+    while intentos < 3:
         try:
-            await blink.save(CONFIG_PATH)
-            print("💾 Sesión Blink guardada correctamente.")
+            try:
+                with open(CONFIG_PATH, "r") as f:
+                    auth_data = json.load(f)
+                blink.auth = Auth(auth_data)
+                print("🔄 Intentando restaurar sesión Blink...")
+            except:
+                print("⚠️ No hay sesión previa, login manual.")
+                blink.auth = Auth({"username": BLINK_USER, "password": BLINK_PASS})
+            await blink.start()
+            blink.refresh_rate = 30
+            blink.no_owls = True
+            print("✅ Sesión Blink iniciada correctamente.")
+            if not os.path.exists(CONFIG_PATH):
+                await blink.save(CONFIG_PATH)
+                print("💾 Sesión Blink guardada.")
+            return
         except Exception as e:
-            print(f"⚠️ No se pudo guardar la sesión: {e}")
+            print(f"❌ Error iniciando Blink: {e}")
+            intentos += 1
+            if "Login endpoint failed" in str(e) or "Unable to refresh token" in str(e):
+                print("⏳ Esperando antes de reintentar...")
+                await asyncio.sleep(CHECK_INTERVAL*3)
+            else:
+                break
+    raise Exception("🚨 No se pudo conectar a Blink después de varios intentos.")
 
 async def activar_blink(chat_id):
     try:
