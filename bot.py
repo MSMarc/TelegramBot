@@ -1210,7 +1210,7 @@ async def main():
         # asyncio.create_task(mqtt_escuchar_cochera()),
         # asyncio.create_task(monitor_cochera()),
     ]
-    await comando_cochera_update()
+    # await comando_cochera_update()
     print("🚀 Bot iniciado")
     try:
         await asyncio.gather(*tareas)
