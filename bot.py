@@ -823,37 +823,47 @@ async def cerrar_sesion():
 
 async def conectar_blink():
     global blink
-    if blink and blink.available:
-        return
     blink = Blink()
-    intentos = 0
-    while intentos < 3:
-        try:
+    sesion_restaurada = False
+    try:
+        if os.path.exists(CONFIG_PATH):
+            with open(CONFIG_PATH, "r") as f:
+                auth_data = json.load(f)
+            blink.auth = Auth(auth_data)
+            sesion_restaurada = True
+            print("🔄 Intentando restaurar sesión Blink...")
+        else:
+            print("⚠️ No hay sesión guardada, iniciando login manual...")
+            blink.auth = Auth({"username": BLINK_USER, "password": BLINK_PASS})
+        await blink.start()
+        print("✅ Sesión Blink iniciada correctamente.")
+        blink.refresh_rate = 30
+        blink.no_owls = True
+    except Exception as e:
+        print(f"❌ Error iniciando Blink: {e}")
+        if "Unable to refresh token" in str(e) or "Login endpoint failed" in str(e):
+            print("🔑 Token caducado, iniciando login limpio...")
             try:
-                with open(CONFIG_PATH, "r") as f:
-                    auth_data = json.load(f)
-                blink.auth = Auth(auth_data)
-                print("🔄 Intentando restaurar sesión Blink...")
-            except:
-                print("⚠️ No hay sesión previa, login manual.")
+                if os.path.exists(CONFIG_PATH):
+                    os.remove(CONFIG_PATH)
+                    print("🗑️ Sesión anterior eliminada.")
+
                 blink.auth = Auth({"username": BLINK_USER, "password": BLINK_PASS})
-            await blink.start()
-            blink.refresh_rate = 30
-            blink.no_owls = True
-            print("✅ Sesión Blink iniciada correctamente.")
-            if not os.path.exists(CONFIG_PATH):
+                await blink.start()
+                print("✅ Sesión Blink renovada.")
                 await blink.save(CONFIG_PATH)
-                print("💾 Sesión Blink guardada.")
-            return
+                print("💾 Nueva sesión guardada.")
+                return
+            except Exception as e2:
+                raise Exception(f"❌ Error al hacer login manual: {e2}")
+        else:
+            raise e
+    if not sesion_restaurada:
+        try:
+            await blink.save(CONFIG_PATH)
+            print("💾 Sesión Blink guardada correctamente.")
         except Exception as e:
-            print(f"❌ Error iniciando Blink: {e}")
-            intentos += 1
-            if "Login endpoint failed" in str(e) or "Unable to refresh token" in str(e):
-                print("⏳ Esperando antes de reintentar...")
-                await asyncio.sleep(CHECK_INTERVAL*3)
-            else:
-                break
-    raise Exception("🚨 No se pudo conectar a Blink después de varios intentos.")
+            print(f"⚠️ No se pudo guardar la sesión: {e}")
 
 async def activar_blink(chat_id):
     try:
