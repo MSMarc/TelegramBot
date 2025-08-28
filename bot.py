@@ -823,32 +823,34 @@ async def cerrar_sesion():
 
 async def conectar_blink():
     global blink
+    if blink and blink.available:
+        return
     blink = Blink()
     sesion_restaurada = False
     try:
-        if os.path.exists(CONFIG_PATH):
-            print("🔄 Intentando restaurar sesión Blink...")
-            with open(CONFIG_PATH, "r") as f:
-                auth_data = json.load(f)
-            blink.auth = Auth(auth_data)
-            sesion_restaurada = True
-        else:
-            print("🔑 No hay sesión guardada, login manual requerido.")
-            username = input("Introduce tu usuario/correo de Blink: ")
-            password = input("Introduce tu contraseña de Blink: ")
-            blink.auth = Auth({"username": username, "password": password})
+        with open(CONFIG_PATH, "r") as f:
+            auth_data = json.load(f)
+        blink.auth = Auth(auth_data)
+        sesion_restaurada = True
+    except Exception:
+        print("⚠️ No se encontró sesión guardada o está corrupta. Login manual...")
+        if not BLINK_USER or not BLINK_PASS:
+            raise Exception("❌ No hay usuario o contraseña Blink en variables de entorno")
+        blink.auth = Auth({"username": BLINK_USER, "password": BLINK_PASS})
+    try:
         await blink.start()
-        if not blink.available:
-            raise Exception("❌ No se pudo inicializar Blink, revisa credenciales o conexión.")
+        print("✅ Sesión Blink iniciada correctamente.")
         blink.refresh_rate = 30
         blink.no_owls = True
-        print("✅ Sesión Blink iniciada correctamente.")
-        if not sesion_restaurada:
-            await blink.save(CONFIG_PATH)
-            print("💾 Sesión Blink guardada correctamente.")
     except Exception as e:
         print(f"❌ Error iniciando Blink: {e}")
         raise e
+    if not sesion_restaurada:
+        try:
+            await blink.save(CONFIG_PATH)
+            print("💾 Sesión Blink guardada correctamente.")
+        except Exception as e:
+            print(f"⚠️ No se pudo guardar la sesión: {e}")
 
 async def activar_blink(chat_id):
     try:
