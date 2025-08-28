@@ -827,17 +827,19 @@ async def conectar_blink():
     sesion_restaurada = False
     try:
         if os.path.exists(CONFIG_PATH):
+            print("🔄 Intentando restaurar sesión Blink...")
             with open(CONFIG_PATH, "r") as f:
                 auth_data = json.load(f)
             blink.auth = Auth(auth_data)
             sesion_restaurada = True
-            print("🔄 Intentando restaurar sesión Blink...")
         else:
-            print("⚠️ No hay sesión guardada, iniciando login manual...")
-            blink.auth = Auth({"username": BLINK_USER, "password": BLINK_PASS})
+            print("🔑 No hay sesión guardada, login manual requerido.")
+            username = input("Introduce tu usuario/correo de Blink: ")
+            password = input("Introduce tu contraseña de Blink: ")
+            blink.auth = Auth({"username": username, "password": password})
         await blink.start()
         if not blink.available:
-            raise Exception("Cannot setup Blink platform.")
+            raise Exception("❌ No se pudo inicializar Blink, revisa credenciales o conexión.")
         blink.refresh_rate = 30
         blink.no_owls = True
         print("✅ Sesión Blink iniciada correctamente.")
@@ -846,21 +848,7 @@ async def conectar_blink():
             print("💾 Sesión Blink guardada correctamente.")
     except Exception as e:
         print(f"❌ Error iniciando Blink: {e}")
-        if "Login endpoint failed" in str(e) or "Unable to refresh token" in str(e):
-            try:
-                if os.path.exists(CONFIG_PATH):
-                    os.remove(CONFIG_PATH)
-                    print("🗑️ Sesión anterior eliminada.")
-                blink.auth = Auth({"username": BLINK_USER, "password": BLINK_PASS})
-                await blink.start()
-                if not blink.available:
-                    raise Exception("❌ Blink sigue sin estar disponible.")
-                await blink.save(CONFIG_PATH)
-                print("✅ Sesión renovada y guardada.")
-            except Exception as e2:
-                raise Exception(f"❌ Error al hacer login manual: {e2}")
-        else:
-            raise e
+        raise e
 
 async def activar_blink(chat_id):
     try:
