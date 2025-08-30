@@ -151,7 +151,7 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
         await comando_video(chat_id, texto)
     elif texto == "/cap":
         # await comando_cap(chat_id)
-        requests.post("http://localhost:8123/api/webhook/captura")
+        requests.post(f"http://localhost:8123/api/webhook/captura{'' if chat_id==TELEGRAM_CHAT_ID else '2'}")
     elif texto.startswith("/rec"):
         await comando_rec(texto, chat_id)
     # elif texto.startswith("/nocturno"):
