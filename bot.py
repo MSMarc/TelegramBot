@@ -150,7 +150,8 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
     elif texto.startswith("/video "):
         await comando_video(chat_id, texto)
     elif texto == "/cap":
-        await comando_cap(chat_id)
+        # await comando_cap(chat_id)
+        requests.post("http://localhost:8123/api/webhook/captura")
     elif texto.startswith("/rec"):
         await comando_rec(texto, chat_id)
     # elif texto.startswith("/nocturno"):
