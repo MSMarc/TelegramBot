@@ -163,15 +163,15 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
     elif texto == "/abrir":
         requests.post("http://localhost:8123/api/webhook/obrir-porta-principal")
     elif texto == "/cochera" or texto == "/cotxera":
-        requests.post("http://localhost:8123/api/webhook/obrir-cotxera")
+        requests.post("http://localhost:8123/api/webhook/obrir-cochera")
     elif texto == "/cochera_status" or texto == "/cotxera_status":
         cerrado_anterior = None
-        await comando_cochera_update()
+        # await comando_cochera_update()
     elif texto == "/tanca":
         requests.post("http://localhost:8123/api/webhook/obrir-tanca")
     elif texto == "/car":
         requests.post("http://localhost:8123/api/webhook/obrir-tanca")
-        requests.post("http://localhost:8123/api/webhook/obrir-cotxera")
+        requests.post("http://localhost:8123/api/webhook/obrir-cochera")
     elif texto.startswith("/horno"):
         comando_horno(texto, chat_id)
     elif texto.startswith("/id"):
