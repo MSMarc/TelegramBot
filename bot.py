@@ -79,6 +79,7 @@ def order(cameras):
 HORA_ARMADO_INICIO = leer_hora_env("HORA_ARMADO_INICIO", time(0, 30))
 HORA_ARMADO_FIN = leer_hora_env("HORA_ARMADO_FIN", time(8, 0))
 contador_videos = cargar_max_id_videos()+1
+vpn_activa = False
 
 #Gestionar comandos
 
@@ -178,8 +179,32 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
         comando_id(texto, user_id, chat_id)
     elif texto == "/terminal":
         await comando_terminal(user_id, chat_id)
+    elif texto == "/vpn":
+        await comando_vpn(user_id, chat_id)
     else:
         telegram_enviar("❌ Comando no soportado", chat_id)
+
+async def comando_vpn(user_id, chat_id):
+    global vpn_activa
+    if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
+        telegram_enviar("⛔ Solo el administrador puede usar /vpn", chat_id)
+        return
+    comando = "sudo tailscale up" if not vpn_activa else "sudo tailscale down"
+    try:
+        proc = await asyncio.create_subprocess_shell(
+            comando,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode == 0:
+            vpn_activa = not vpn_activa
+            estado = "✅ VPN activada" if vpn_activa else "🛑 VPN desactivada"
+            telegram_enviar(estado, chat_id)
+        else:
+            telegram_enviar(f"❌ Error ejecutando VPN:\n```\n{stderr.decode()}\n```", chat_id, parse_mode="MarkdownV2")
+    except Exception as e:
+        telegram_enviar(f"⚠️ Error interno: {e}", chat_id)
 
 MAX_TELEGRAM_LEN = 3500
 PROMPT_FLAG = "__END_OF_CMD__"
