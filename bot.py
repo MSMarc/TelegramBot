@@ -210,11 +210,8 @@ async def comando_vpn(user_id, chat_id):
     ip_actual = estado.get("TailscaleIPs", ["-"])[0] if estado.get("TailscaleIPs") else "-"
     if vpn_activa:
         comando = "sudo tailscale down"
-        accion = "🔴 Desactivando VPN..."
     else:
         comando = "sudo tailscale up"
-        accion = "🔵 Activando VPN..."
-    telegram_enviar(accion, chat_id)
     proc = await asyncio.create_subprocess_shell(
         comando,
         stdout=asyncio.subprocess.PIPE,
@@ -230,7 +227,7 @@ async def comando_vpn(user_id, chat_id):
     if vpn_final and not vpn_activa:
         telegram_enviar(f"✅ VPN activada\n🌐 IP: `{ip_final}`", chat_id, parse_mode="MarkdownV2")
     elif not vpn_final and vpn_activa:
-        telegram_enviar("🛑 VPN desactivada correctamente", chat_id)
+        telegram_enviar("🛑 VPN desactivada", chat_id)
     else:
         telegram_enviar(
             f"❌ No se pudo cambiar el estado de la VPN.\n\nSalida:\n```\n{stderr.decode().strip() or stdout.decode().strip()}\n```",
