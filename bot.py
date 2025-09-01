@@ -79,7 +79,6 @@ def order(cameras):
 HORA_ARMADO_INICIO = leer_hora_env("HORA_ARMADO_INICIO", time(0, 30))
 HORA_ARMADO_FIN = leer_hora_env("HORA_ARMADO_FIN", time(8, 0))
 contador_videos = cargar_max_id_videos()+1
-vpn_activa = False
 
 #Gestionar comandos
 
@@ -184,27 +183,60 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
     else:
         telegram_enviar("❌ Comando no soportado", chat_id)
 
+import json
+
 async def comando_vpn(user_id, chat_id):
-    global vpn_activa
     if str(user_id) != str(USUARIOS_AUTORIZADOS[0]):
         telegram_enviar("⛔ Solo el administrador puede usar /vpn", chat_id)
         return
-    comando = "sudo tailscale up" if not vpn_activa else "sudo tailscale down"
-    try:
+    async def obtener_estado():
         proc = await asyncio.create_subprocess_shell(
-            comando,
+            "tailscale status --json",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
         stdout, stderr = await proc.communicate()
-        if proc.returncode == 0:
-            vpn_activa = not vpn_activa
-            estado = "✅ VPN activada" if vpn_activa else "🛑 VPN desactivada"
-            telegram_enviar(estado, chat_id)
-        else:
-            telegram_enviar(f"❌ Error ejecutando VPN:\n```\n{stderr.decode()}\n```", chat_id, parse_mode="MarkdownV2")
-    except Exception as e:
-        telegram_enviar(f"⚠️ Error interno: {e}", chat_id)
+        if proc.returncode != 0:
+            return None, stderr.decode().strip()
+        try:
+            return json.loads(stdout.decode()), None
+        except json.JSONDecodeError:
+            return None, "Error analizando JSON"
+    estado, error = await obtener_estado()
+    if error:
+        telegram_enviar(f"❌ Error consultando estado:\n```\n{error}\n```", chat_id, parse_mode="MarkdownV2")
+        return
+    vpn_activa = estado.get("BackendState") == "Running"
+    ip_actual = estado.get("TailscaleIPs", ["-"])[0] if estado.get("TailscaleIPs") else "-"
+    if vpn_activa:
+        comando = "sudo tailscale down"
+        accion = "🔴 Desactivando VPN..."
+    else:
+        comando = "sudo tailscale up"
+        accion = "🔵 Activando VPN..."
+    telegram_enviar(accion, chat_id)
+    proc = await asyncio.create_subprocess_shell(
+        comando,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await proc.communicate()
+    estado_final, error_final = await obtener_estado()
+    if error_final:
+        telegram_enviar(f"⚠️ Error comprobando estado final:\n```\n{error_final}\n```", chat_id, parse_mode="MarkdownV2")
+        return
+    vpn_final = estado_final.get("BackendState") == "Running"
+    ip_final = estado_final.get("TailscaleIPs", ["-"])[0] if estado_final.get("TailscaleIPs") else "-"
+    if vpn_final and not vpn_activa:
+        telegram_enviar(f"✅ VPN activada\n🌐 IP: `{ip_final}`", chat_id, parse_mode="MarkdownV2")
+    elif not vpn_final and vpn_activa:
+        telegram_enviar("🛑 VPN desactivada correctamente", chat_id)
+    else:
+        telegram_enviar(
+            f"❌ No se pudo cambiar el estado de la VPN.\n\nSalida:\n```\n{stderr.decode().strip() or stdout.decode().strip()}\n```",
+            chat_id,
+            parse_mode="MarkdownV2"
+        )
 
 MAX_TELEGRAM_LEN = 3500
 PROMPT_FLAG = "__END_OF_CMD__"
