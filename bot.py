@@ -169,9 +169,9 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
         # await comando_cochera_update()
     elif texto == "/tanca":
         requests.post("http://localhost:8123/api/webhook/obrir-tanca")
-    elif texto == "/bloq-cochera":
+    elif texto == "/bloq_cochera":
         requests.post("http://localhost:8123/api/webhook/bloq-cochera")
-    elif texto == "/unbloq-cochera":
+    elif texto == "/unbloq_cochera":
         requests.post("http://localhost:8123/api/webhook/unbloq-cochera")
     elif texto == "/car":
         requests.post("http://localhost:8123/api/webhook/obrir-tanca")
