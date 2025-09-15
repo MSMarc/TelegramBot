@@ -169,6 +169,10 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
         # await comando_cochera_update()
     elif texto == "/tanca":
         requests.post("http://localhost:8123/api/webhook/obrir-tanca")
+    elif texto == "/bloq-cochera":
+        requests.post("http://localhost:8123/api/webhook/bloq-cochera")
+    elif texto == "/unbloq-cochera":
+        requests.post("http://localhost:8123/api/webhook/unbloq-cochera")
     elif texto == "/car":
         requests.post("http://localhost:8123/api/webhook/obrir-tanca")
         requests.post("http://localhost:8123/api/webhook/obrir-cochera")
@@ -229,11 +233,7 @@ async def comando_vpn(user_id, chat_id):
     elif not vpn_final and vpn_activa:
         telegram_enviar("🛑 VPN desactivada", chat_id)
     else:
-        telegram_enviar(
-            f"❌ No se pudo cambiar el estado de la VPN.\n\nSalida:\n```\n{stderr.decode().strip() or stdout.decode().strip()}\n```",
-            chat_id,
-            parse_mode="MarkdownV2"
-        )
+        telegram_enviar(f"❌ No se pudo cambiar el estado de la VPN.\n\nSalida:\n```\n{stderr.decode().strip() or stdout.decode().strip()}\n```", chat_id,  parse_mode="MarkdownV2" )
 
 MAX_TELEGRAM_LEN = 3500
 PROMPT_FLAG = "__END_OF_CMD__"
