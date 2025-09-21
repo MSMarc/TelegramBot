@@ -176,6 +176,8 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
     elif texto == "/car":
         requests.post("http://localhost:8123/api/webhook/obrir-tanca")
         requests.post("http://localhost:8123/api/webhook/obrir-cochera")
+    elif texto == "/clima":
+        requests.post("http://localhost:8123/api/webhook/clima")
     elif texto.startswith("/horno"):
         comando_horno(texto, chat_id)
     elif texto.startswith("/id"):
