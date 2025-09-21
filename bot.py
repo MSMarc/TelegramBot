@@ -1259,7 +1259,7 @@ async def main():
         print(f"⚠️ No se pudo conectar a Blink al inicio: {e}")
     tareas = [
         asyncio.create_task(telegram_recibir()),
-        asyncio.create_task(captura_cada_hora()),
+        # asyncio.create_task(captura_cada_hora()),
         # asyncio.create_task(loop_principal(TELEGRAM_CHAT_ID)),
         asyncio.create_task(vigilar_movimiento()),
         # asyncio.create_task(mqtt_escuchar_cochera()),
