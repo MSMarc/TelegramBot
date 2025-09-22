@@ -179,7 +179,7 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
     elif texto == "/clima":
         requests.post("http://localhost:8123/api/webhook/clima")
     elif texto.startswith("/alexa"):
-        comando_alexa(texto.split(" ", 1))
+        comando_alexa(texto.split(" ", 1), chat_id)
     elif texto.startswith("/horno"):
         comando_horno(texto, chat_id)
     elif texto.startswith("/id"):
@@ -737,7 +737,7 @@ def comando_id(texto, user_id, chat_id):
     except IndexError:
         telegram_enviar("❌ Formato incorrecto. Usa /id 1 o /id 2", chat_id)
 
-def comando_alexa(partes):
+def comando_alexa(partes, chat_id):
     if len(partes) > 1:
         mensaje = partes[1].strip()
     else:
@@ -754,19 +754,19 @@ def comando_alexa(partes):
         try:
             response = requests.post(url_nodered, json=datos, headers=headers, timeout=10)
             if response.status_code == 200:
-                print(f"✅ Mensaje enviado a Alexa: '{mensaje}'")
+                telegram_enviar(f"✅ Mensaje enviado a Alexa: '{mensaje}'", chat_id)
             elif response.status_code == 404:
-                print("❌ Webhook no encontrado. Verifica la URL de Node-RED")
+                telegram_enviar("❌ Webhook no encontrado. Verifica la URL de Node-RED", chat_id)
             else:
-                print(f"❌ Error HTTP {response.status_code}")
+                telegram_enviar(f"❌ Error HTTP {response.status_code}", chat_id)
         except requests.exceptions.ConnectionError:
-            print("❌ No se pudo conectar a Node-RED")
+            telegram_enviar("❌ No se pudo conectar a Node-RED", chat_id)
         except requests.exceptions.Timeout:
-            print("❌ Timeout al conectar con Node-RED")
+            telegram_enviar("❌ Timeout al conectar con Node-RED", chat_id)
         except Exception as e:
-            print(f"❌ Error inesperado: {e}")
+            telegram_enviar(f"❌ Error inesperado: {e}", chat_id)
     else:
-        print("⚠️ Uso: /alexa [mensaje]")
+        telegram_enviar("⚠️ Uso: /alexa [mensaje]", chat_id)
 
 def comando_horno(texto, chat_id):
     partes = texto.split()
