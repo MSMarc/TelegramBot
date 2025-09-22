@@ -178,6 +178,8 @@ async def manejar_comando(texto, message_id, chat_id, user_id):
         requests.post("http://localhost:8123/api/webhook/obrir-cochera")
     elif texto == "/clima":
         requests.post("http://localhost:8123/api/webhook/clima")
+    elif texto.startswith("/alexa"):
+        comando_alexa(texto.split(" ", 1))
     elif texto.startswith("/horno"):
         comando_horno(texto, chat_id)
     elif texto.startswith("/id"):
@@ -734,6 +736,37 @@ def comando_id(texto, user_id, chat_id):
             telegram_enviar("❌ Opción inválida. Usa /id 1 o /id 2", chat_id)
     except IndexError:
         telegram_enviar("❌ Formato incorrecto. Usa /id 1 o /id 2", chat_id)
+
+def comando_alexa(partes):
+    if len(partes) > 1:
+        mensaje = partes[1].strip()
+    else:
+        mensaje = ""
+    if mensaje:
+        url_nodered = "http://localhost:1880/webhook/alexa-message"
+        datos = {
+            "message": mensaje,
+            "source": "telegram_bot"
+        }
+        headers = {
+            "Content-Type": "application/json"
+        }
+        try:
+            response = requests.post(url_nodered, json=datos, headers=headers, timeout=10)
+            if response.status_code == 200:
+                print(f"✅ Mensaje enviado a Alexa: '{mensaje}'")
+            elif response.status_code == 404:
+                print("❌ Webhook no encontrado. Verifica la URL de Node-RED")
+            else:
+                print(f"❌ Error HTTP {response.status_code}")
+        except requests.exceptions.ConnectionError:
+            print("❌ No se pudo conectar a Node-RED")
+        except requests.exceptions.Timeout:
+            print("❌ Timeout al conectar con Node-RED")
+        except Exception as e:
+            print(f"❌ Error inesperado: {e}")
+    else:
+        print("⚠️ Uso: /alexa [mensaje]")
 
 def comando_horno(texto, chat_id):
     partes = texto.split()
